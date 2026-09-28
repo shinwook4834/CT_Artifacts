@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <linearGradient id="tealGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#14b8a6"/>
+      <stop offset="100%" stop-color="#0f766e"/>
+    </linearGradient>
+    <linearGradient id="innerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ccfbf1"/>
+      <stop offset="100%" stop-color="#2dd4bf"/>
+    </linearGradient>
+  </defs>
+  <!-- Background Shield -->
+  <rect x="5" y="5" width="90" height="90" rx="22" fill="url(#tealGrad)" />
+  <!-- Port Outline -->
+  <circle cx="50" cy="50" r="32" fill="none" stroke="#ffffff" stroke-width="4" stroke-dasharray="6 3" opacity="0.6"/>
+  <!-- Central Port Septum -->
+  <circle cx="50" cy="50" r="22" fill="url(#innerGrad)"/>
+  <circle cx="50" cy="50" r="14" fill="#0f766e"/>
+  <!-- Catheter Tube -->
+  <path d="M50 28 L50 12 Q50 6 56 6 L75 6" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+  <!-- Pulse Wave / Radiation Ray -->
+  <path d="M24 50 L34 50 L40 40 L46 60 L54 38 L60 54 L66 50 L76 50" fill="none" stroke="#f0fdfa" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

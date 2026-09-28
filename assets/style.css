@@ -1,0 +1,743 @@
+/* Apple Liquid Glass (Glassmorphism) Theme for ChemoPort CT-MAR Studio */
+
+@import url('https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-bg-subtle: rgba(255, 255, 255, 0.52);
+  --glass-bg-elevated: rgba(255, 255, 255, 0.88);
+  --glass-border: rgba(255, 255, 255, 0.82);
+  --glass-border-subtle: rgba(255, 255, 255, 0.5);
+  --glass-highlight: rgba(255, 255, 255, 0.98);
+  
+  --apple-teal: #0d9488;
+  --apple-teal-dark: #0f766e;
+  --apple-teal-light: #2dd4bf;
+  --apple-cyan: #06b6d4;
+  --apple-blue: #0284c7;
+  --apple-rose: #f43f5e;
+  
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --text-light: #94a3b8;
+  
+  --shadow-liquid: 0 16px 40px -12px rgba(15, 118, 110, 0.12),
+                   0 4px 12px -2px rgba(15, 118, 110, 0.05),
+                   inset 0 1px 1px 0 rgba(255, 255, 255, 0.95);
+  --shadow-card: 0 10px 30px -8px rgba(0, 0, 0, 0.06),
+                 0 2px 8px -2px rgba(0, 0, 0, 0.03),
+                 inset 0 1px 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+/* Background canvas with fluid ambient lighting */
+html, body, [data-testid="stAppViewContainer"] {
+  background: 
+    radial-gradient(circle at 10% 10%, rgba(204, 251, 241, 0.55) 0%, transparent 45%),
+    radial-gradient(circle at 90% 15%, rgba(224, 242, 254, 0.6) 0%, transparent 45%),
+    radial-gradient(circle at 50% 85%, rgba(240, 253, 250, 0.65) 0%, transparent 50%),
+    linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", sans-serif;
+  color: var(--text-primary) !important;
+}
+
+/* Main container spacing */
+.main .block-container {
+  padding-top: 1.0rem !important;
+  padding-bottom: 3rem !important;
+  max-width: 1320px !important;
+}
+
+/* ================================================= */
+/* SIDEBAR: APPLE LIQUID GLASS WITH HIGH CONTRAST    */
+/* ================================================= */
+[data-testid="stSidebar"] {
+  background: rgba(248, 250, 252, 0.82) !important;
+  backdrop-filter: blur(36px) saturate(210%) !important;
+  -webkit-backdrop-filter: blur(36px) saturate(210%) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.8) !important;
+  box-shadow: 6px 0 35px rgba(15, 23, 42, 0.04) !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+  background: transparent !important;
+}
+
+/* Guarantee text contrast in sidebar regardless of dark/light OS mode */
+[data-testid="stSidebar"] * {
+  color: #0f172a !important;
+}
+
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] h4 {
+  color: #0f172a !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.3px !important;
+}
+
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] div {
+  color: #1e293b !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+[data-testid="stSidebar"] label[data-testid="stWidgetLabel"] {
+  color: #0f766e !important;
+  font-weight: 800 !important;
+  font-size: 0.74rem !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.7px !important;
+  margin-bottom: 6px !important;
+}
+
+/* Liquid Glass Radio Navigation Tiles (Uniform Full-Width Geometry) */
+[data-testid="stSidebarUserContent"],
+[data-testid="stSidebar"] [data-testid="stElementContainer"],
+[data-testid="stSidebar"] .stElementContainer,
+[data-testid="stSidebar"] [data-testid="stRadio"],
+[data-testid="stSidebar"] [data-testid="stRadio"] > div,
+[data-testid="stSidebar"] [data-testid="stRadioGroup"],
+[data-testid="stSidebar"] div[role="radiogroup"] {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  gap: 8px !important;
+  padding: 4px 0 !important;
+}
+
+/* Ensure ALL inner divs and wrappers inside label are completely transparent */
+[data-testid="stSidebar"] div[role="radiogroup"] label,
+[data-testid="stSidebar"] div[role="radiogroup"] label *,
+[data-testid="stSidebar"] label[data-baseweb="radio"],
+[data-testid="stSidebar"] label[data-baseweb="radio"] * {
+  background-color: transparent !important;
+}
+
+/* Style the whole label as a uniform full-width Apple Liquid Glass tile */
+[data-testid="stSidebar"] div[role="radiogroup"] > label,
+[data-testid="stSidebar"] div[role="radiogroup"] label,
+[data-testid="stSidebar"] label[data-baseweb="radio"] {
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
+  background: rgba(255, 255, 255, 0.68) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.9) !important;
+  border-radius: 13px !important;
+  padding: 0 13px !important;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.03), inset 0 1px 1px #ffffff !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  cursor: pointer !important;
+  margin: 0 !important;
+  margin-right: 0 !important;
+  margin-left: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+}
+
+[data-testid="stSidebar"] div[role="radiogroup"] > label:hover,
+[data-testid="stSidebar"] div[role="radiogroup"] label:hover,
+[data-testid="stSidebar"] label[data-baseweb="radio"]:hover {
+  background: rgba(255, 255, 255, 0.94) !important;
+  transform: translateX(3px) !important;
+  border-color: rgba(13, 148, 136, 0.45) !important;
+  box-shadow: 0 6px 18px rgba(13, 148, 136, 0.12), inset 0 1px 1px #ffffff !important;
+}
+
+/* Radio button text container and typography - unified font and size */
+[data-testid="stSidebar"] div[role="radiogroup"] > label > div:last-child,
+[data-testid="stSidebar"] div[role="radiogroup"] label > div:last-child,
+[data-testid="stSidebar"] label[data-baseweb="radio"] > div:last-child {
+  flex: 1 !important;
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* Unified Typography for both Radio Groups in Sidebar */
+[data-testid="stSidebar"] div[role="radiogroup"] label,
+[data-testid="stSidebar"] div[role="radiogroup"] label *,
+[data-testid="stSidebar"] label[data-baseweb="radio"],
+[data-testid="stSidebar"] label[data-baseweb="radio"] *,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] * {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", sans-serif !important;
+}
+
+[data-testid="stSidebar"] div[role="radiogroup"] label [data-testid="stMarkdownContainer"],
+[data-testid="stSidebar"] div[role="radiogroup"] label [data-testid="stMarkdownContainer"] *,
+[data-testid="stSidebar"] label[data-baseweb="radio"] [data-testid="stMarkdownContainer"],
+[data-testid="stSidebar"] label[data-baseweb="radio"] [data-testid="stMarkdownContainer"] *,
+[data-testid="stSidebar"] div[role="radiogroup"] label p,
+[data-testid="stSidebar"] div[role="radiogroup"] label span,
+[data-testid="stSidebar"] div[role="radiogroup"] label div {
+  color: #334155 !important;
+  font-size: 0.81rem !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.15px !important;
+  margin: 0 !important;
+  line-height: 1.25 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* Selected active state: Clean luminous light glass background with vivid teal border */
+[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked),
+[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"],
+[data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked) {
+  background: rgba(255, 255, 255, 0.98) !important;
+  border: 1.5px solid #0d9488 !important;
+  box-shadow: 0 4px 18px rgba(13, 148, 136, 0.18), 
+              0 0 0 2px rgba(13, 148, 136, 0.12),
+              inset 0 1px 1px #ffffff !important;
+}
+
+/* Selected active text: Bold deep navy with maximum clarity & contrast */
+[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) [data-testid="stMarkdownContainer"],
+[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) [data-testid="stMarkdownContainer"] *,
+[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] [data-testid="stMarkdownContainer"],
+[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] [data-testid="stMarkdownContainer"] *,
+[data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked) [data-testid="stMarkdownContainer"],
+[data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked) [data-testid="stMarkdownContainer"] *,
+[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p,
+[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) span,
+[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] p,
+[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] span,
+[data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked) p,
+[data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked) span {
+  color: #0f172a !important;
+  font-weight: 750 !important;
+}
+
+[data-testid="stSidebar"] hr {
+  border-color: rgba(203, 213, 225, 0.65) !important;
+  margin: 18px 0 !important;
+}
+
+/* ================================================= */
+/* HEADER & MAIN CANVAS LIQUID GLASS                 */
+/* ================================================= */
+
+/* Header Liquid Glass Hero Banner (Doubled Uniform Height Across All Pages: 152px) */
+.liquid-header {
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.9) 0%, rgba(13, 148, 136, 0.85) 50%, rgba(2, 132, 199, 0.8) 100%);
+  backdrop-filter: blur(30px) saturate(200%);
+  -webkit-backdrop-filter: blur(30px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 32px;
+  height: 152px !important;
+  min-height: 152px !important;
+  max-height: 152px !important;
+  box-sizing: border-box !important;
+  padding: 0 32px !important;
+  color: #ffffff !important;
+  margin-bottom: 22px;
+  box-shadow: 0 18px 45px -10px rgba(15, 118, 110, 0.26),
+              inset 0 1px 2px 0 rgba(255, 255, 255, 0.5);
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.liquid-header * {
+  color: #ffffff !important;
+}
+
+.liquid-header::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 45%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 100%);
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  pointer-events: none;
+}
+
+.liquid-header-inner {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: center !important;
+  text-align: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  overflow: hidden !important;
+}
+
+.liquid-header h1,
+.liquid-title {
+  font-size: 1.82rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.5px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  gap: 12px !important;
+  line-height: 1.25 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.liquid-subtitle {
+  font-size: 0.95rem !important;
+  color: rgba(240, 253, 250, 0.95) !important;
+  margin: 8px 0 0 0 !important;
+  padding: 0 !important;
+  font-weight: 450 !important;
+  letter-spacing: -0.15px !important;
+  line-height: 1.3 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* Glass Card */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  padding: 22px;
+  box-shadow: var(--shadow-liquid);
+  margin-bottom: 20px;
+  position: relative;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 45px -10px rgba(15, 118, 110, 0.16),
+              inset 0 1px 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+/* ================================================= */
+/* QUILLBOT PDF-CONVERTER INSPIRED DROPZONE HERO    */
+/* ================================================= */
+.quillbot-hero-wrapper {
+  max-width: 860px;
+  margin: 0 auto 16px auto;
+  text-align: center;
+}
+
+[data-testid="stFileUploader"] {
+  max-width: 860px !important;
+  margin: 0 auto !important;
+}
+
+[data-testid="stFileUploaderDropzone"] {
+  background: rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: blur(28px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  border: 2px dashed rgba(13, 148, 136, 0.45) !important;
+  border-radius: 26px !important;
+  min-height: 330px !important;
+  padding: 58px 36px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 16px !important;
+  text-align: center !important;
+  box-shadow: 0 16px 45px -10px rgba(15, 118, 110, 0.08), inset 0 1px 1px #ffffff !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  box-sizing: border-box !important;
+}
+
+[data-testid="stFileUploaderDropzone"]:hover {
+  background: rgba(240, 253, 250, 0.92) !important;
+  border-color: #0d9488 !important;
+  transform: translateY(-3px) !important;
+  box-shadow: 0 22px 55px -10px rgba(13, 148, 136, 0.2), inset 0 1px 1px #ffffff !important;
+}
+
+/* Instructions container inside dropzone */
+[data-testid="stFileUploaderDropzoneInstructions"] {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  gap: 12px !important;
+}
+
+/* Cloud upload icon sizing & styling */
+[data-testid="stFileUploaderDropzone"] svg,
+[data-testid="stFileUploaderDropzoneInstructions"] svg {
+  color: #0d9488 !important;
+  width: 58px !important;
+  height: 58px !important;
+  filter: drop-shadow(0 6px 14px rgba(13, 148, 136, 0.25)) !important;
+  margin-bottom: 2px !important;
+  transition: transform 0.2s ease !important;
+}
+
+[data-testid="stFileUploaderDropzone"]:hover svg {
+  transform: scale(1.08) translateY(-2px) !important;
+}
+
+/* Main 'Drag and drop file here' text */
+[data-testid="stFileUploaderDropzone"] span,
+[data-testid="stFileUploaderDropzoneInstructions"] span {
+  font-size: 1.18rem !important;
+  color: #0f172a !important;
+  font-weight: 750 !important;
+  letter-spacing: -0.3px !important;
+}
+
+/* Subtext 'Limit 200MB per file • DCM, ZIP' */
+[data-testid="stFileUploaderDropzone"] small,
+[data-testid="stFileUploaderDropzoneInstructions"] small {
+  font-size: 0.86rem !important;
+  color: #64748b !important;
+  font-weight: 500 !important;
+  margin-top: 4px !important;
+}
+
+/* QuillBot Primary Pill Button inside Dropzone */
+[data-testid="stFileUploaderDropzone"] button {
+  background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%) !important;
+  color: #ffffff !important;
+  border-radius: 9999px !important;
+  padding: 12px 42px !important;
+  font-size: 1.0rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.2px !important;
+  border: none !important;
+  box-shadow: 0 6px 22px rgba(13, 148, 136, 0.32) !important;
+  transition: all 0.2s ease !important;
+  margin: 12px 0 6px 0 !important;
+  cursor: pointer !important;
+}
+
+[data-testid="stFileUploaderDropzone"] button:hover {
+  background: linear-gradient(135deg, #0f766e 0%, #115e59 100%) !important;
+  transform: translateY(-2px) scale(1.02) !important;
+  box-shadow: 0 10px 28px rgba(13, 148, 136, 0.45) !important;
+}
+
+/* Liquid Glass Upload Hero */
+.glass-upload-hero {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1.5px dashed rgba(13, 148, 136, 0.45);
+  border-radius: 20px;
+  padding: 26px;
+  text-align: center;
+  box-shadow: inset 0 2px 6px rgba(15, 118, 110, 0.03);
+  transition: all 0.2s ease;
+}
+
+.glass-upload-hero:hover {
+  border-color: var(--apple-teal);
+  background: rgba(240, 253, 250, 0.75);
+}
+
+/* Side-by-Side Viewer Glass Containers */
+.glass-viewer-card {
+  background: var(--glass-bg-elevated);
+  backdrop-filter: blur(26px) saturate(190%);
+  -webkit-backdrop-filter: blur(26px) saturate(190%);
+  border: 1px solid var(--glass-border);
+  border-radius: 28px;
+  padding: 18px;
+  box-shadow: var(--shadow-card);
+  transition: all 0.25s ease;
+}
+
+.glass-viewer-card:hover {
+  box-shadow: 0 14px 34px -8px rgba(15, 118, 110, 0.12),
+              inset 0 1px 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.glass-viewer-card img,
+.glass-viewer-card [data-testid="stImage"] {
+  cursor: ns-resize !important;
+}
+
+.glass-viewer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+  margin-bottom: 14px;
+}
+
+/* Apple Style Liquid Pills */
+.apple-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.pill-active-glow {
+  background: linear-gradient(135deg, rgba(13, 148, 136, 0.18) 0%, rgba(20, 184, 166, 0.26) 100%);
+  border: 1px solid rgba(13, 148, 136, 0.35);
+  color: #0f766e !important;
+  box-shadow: 0 0 12px rgba(20, 184, 166, 0.25);
+}
+
+.pill-orig {
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.25);
+  color: #e11d48 !important;
+}
+
+.pill-recon {
+  background: rgba(13, 148, 136, 0.14);
+  border: 1px solid rgba(13, 148, 136, 0.3);
+  color: #0f766e !important;
+}
+
+.pill-roadmap {
+  background: rgba(148, 163, 184, 0.15);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #64748b !important;
+}
+
+/* Roadmap Stage Preview Card */
+.stage-preview-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  border-radius: 24px;
+  padding: 36px 40px;
+  box-shadow: var(--shadow-liquid);
+  margin: 30px auto;
+  max-width: 860px;
+  text-align: center;
+}
+
+/* Streamlit Expander Polishing */
+[data-testid="stExpander"] {
+  background: var(--glass-bg-elevated) !important;
+  backdrop-filter: blur(24px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 18px !important;
+  box-shadow: var(--shadow-card) !important;
+  margin-bottom: 20px !important;
+}
+
+[data-testid="stExpander"] summary {
+  font-weight: 700 !important;
+  color: #0f172a !important;
+}
+
+/* Streamlit Widget Polishing (Buttons, Sliders, Inputs) */
+.stButton > button {
+  border-radius: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.2px !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+}
+
+.stButton > button:hover {
+  transform: translateY(-1.5px) !important;
+  box-shadow: 0 8px 20px rgba(15, 118, 110, 0.18) !important;
+}
+
+/* Glass Metric Container */
+[data-testid="stMetric"] {
+  background: rgba(255, 255, 255, 0.68) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.8) !important;
+  border-radius: 14px !important;
+  padding: 10px 14px !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9) !important;
+}
+
+[data-testid="stMetric"] label {
+  color: #475569 !important;
+  font-weight: 600 !important;
+}
+
+[data-testid="stMetric"] [data-testid="stMetricValue"] {
+  color: #0f172a !important;
+  font-weight: 800 !important;
+}
+
+/* Footer Liquid Bar */
+.liquid-footer {
+  margin-top: 40px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.83rem;
+  color: var(--text-muted);
+}
+
+/* Off-screen hidden slice navigation slider for pure PACS mouse wheel navigation */
+div[data-testid="stSlider"]:has([aria-label="Slice Navigation"]),
+div.stSlider:has([aria-label="Slice Navigation"]) {
+  position: fixed !important;
+  left: -9999px !important;
+  top: -9999px !important;
+  width: 400px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Off-screen hidden container for stepper buttons */
+div[data-testid="stHorizontalBlock"]:has(#stepper-hidden-marker) {
+  position: fixed !important;
+  left: -9999px !important;
+  top: -9999px !important;
+  opacity: 0 !important;
+  height: 0 !important;
+  width: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Completely hide uploaded file progress, file rows, chips, and upload process indicators */
+[data-testid="stFileUploaderFile"],
+[data-testid="stFileUploaderFileData"],
+[data-testid="stFileUploaderFileName"],
+[data-testid="stFileUploaderDeleteBtn"],
+[data-testid="stFileUploaderPagination"],
+[data-testid="stFileUploader"] ul,
+[data-testid="stFileUploader"] section:not([data-testid="stFileUploaderDropzone"]),
+.stFileUploader [role="progressbar"],
+.stFileUploader [data-testid="stProgressBar"],
+.stFileUploader ul {
+  display: none !important;
+}
+
+/* Ensure Stepper iframe & container are transparent with no angular/sharp box */
+iframe[title*="st.iframe"],
+iframe,
+div[data-testid="stCustomComponentV1"],
+div[data-testid="stCustomComponentV1"] iframe,
+.element-container:has(iframe) {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  outline: none !important;
+}
+
+/* Workflow Progress Stepper */
+.workflow-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto 22px auto;
+  max-width: 820px;
+  padding: 6px 16px;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  border-radius: 9999px;
+  box-shadow: 0 4px 20px -4px rgba(15, 23, 42, 0.05), inset 0 1px 1px #ffffff;
+}
+
+.step-item {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #64748b;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.step-item span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: rgba(100, 116, 139, 0.15);
+  color: #475569;
+}
+
+.step-item.active {
+  background: #0d9488 !important;
+  color: #ffffff !important;
+  font-weight: 750 !important;
+  box-shadow: 0 4px 14px rgba(13, 148, 136, 0.35);
+}
+
+.step-item.active span {
+  background: #ffffff !important;
+  color: #0d9488 !important;
+}
+
+.step-item.completed {
+  color: #0f766e;
+  background: rgba(13, 148, 136, 0.1);
+  font-weight: 650;
+}
+
+.step-item.completed span {
+  background: #0d9488;
+  color: #ffffff;
+}
+
+.step-arrow {
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+/* Clickable Stepper Arrow */
+.stepper-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
+  color: #94a3b8;
+  font-size: 1.18rem;
+  font-weight: 750;
+  user-select: none;
+}
+
