@@ -1,7 +1,7 @@
 ---
 title: ChemoPort CT-MAR Studio
 emoji: 🩺
-colorFrom: teal
+colorFrom: blue
 colorTo: green
 sdk: streamlit
 sdk_version: 1.51.0
