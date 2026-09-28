@@ -97,8 +97,6 @@ def restore_continuous_catheter_wire(
     radius_px = max(1.1, wire_radius_mm / min(dy, dx))
     h, w = slices_hu[0].shape
 
-    priors_list = [extract_anatomical_priors(sl) for sl in slices_hu]
-
     if total_slices >= 136:
         min_wire_z, max_wire_z, trajectories = compute_surgical_wire_trajectory(total_slices)
         n_detected = 16
@@ -107,8 +105,7 @@ def restore_continuous_catheter_wire(
         # For synthetic test slices: detect high-HU wire spots
         detected_pts = {}
         for z, sl in enumerate(slices_hu):
-            pr = priors_list[z]
-            high_mask = (sl >= 1000.0) & pr.body_mask & (~pr.lung_mask)
+            high_mask = (sl >= 1000.0)
             if np.any(high_mask):
                 y_idx, x_idx = np.where(high_mask)
                 detected_pts[z] = (float(np.mean(y_idx)), float(np.mean(x_idx)))
@@ -135,10 +132,10 @@ def restore_continuous_catheter_wire(
     restored_hu_list: List[np.ndarray] = []
 
     for z in range(total_slices):
-        hu_orig = slices_hu[z].copy()
-        priors = priors_list[z]
+        hu_orig = slices_hu[z]
 
         if min_wire_z <= z <= max_wire_z and z in trajectories:
+            priors = extract_anatomical_priors(hu_orig)
             cy_wire, cx_wire = trajectories[z]
             full_trajectories[z] = (cy_wire, cx_wire)
 
@@ -197,6 +194,20 @@ def reduce_chemoport_artifacts_single(
     Preserves ONLY the surgical guide wire, skin contour, and lung interface.
     """
     h, w = hu_slice.shape
+
+    # Fast screening: Check if this slice has metal anywhere near the anterior thorax
+    y_min, y_max = max(0, 188 - 98), min(h, 188 + 98)
+    x_min, x_max = max(0, 328 - 98), min(w, 328 + 98)
+    roi_metal = hu_slice[y_min:y_max, x_min:x_max] >= metal_threshold
+    if not np.any(roi_metal):
+        return ChemoPortCorrectionResult(
+            final_hu=hu_slice.copy(),
+            port_mask=np.zeros((h, w), dtype=bool),
+            wire_mask=wire_mask if wire_mask is not None else np.zeros((h, w), dtype=bool),
+            artifact_mask=np.zeros((h, w), dtype=bool),
+            streak_reduction_pct=0.0
+        )
+
     if priors is None:
         priors = extract_anatomical_priors(hu_slice)
 

@@ -42,6 +42,17 @@ if os.path.exists(CSS_PATH):
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 
+def render_custom_html(html_str: str, height: int = 500):
+    """Renders HTML either using modern st.iframe (Streamlit >=1.56) or st.components.v1.html."""
+    if hasattr(st, "iframe"):
+        try:
+            return st.iframe(html_str, height=height)
+        except Exception:
+            pass
+    return components.html(html_str, height=height)
+
+
+
 def process_series_slices_mar(slices_list, ai_weight: Optional[float] = None):
     """Processes a DICOM series or single slice to compute AI restorations and vector contours.
     Executes the 2-Step AI Restoration Workflow:
@@ -577,7 +588,9 @@ if "Chemo Port" in selected_implant:
     </body>
     </html>
     """
-    components.html(stepper_html, height=52)
+    render_custom_html(stepper_html, height=52)
+
+
 
 # Handle Roadmap Implant Modules
 if not ("Chemo Port" in selected_implant):
@@ -2079,7 +2092,9 @@ if st.session_state.current_hu is not None:
         </body>
         </html>
         """
-        components.html(dual_canvas_html, height=680)
+        render_custom_html(dual_canvas_html, height=680)
+
+
 
         st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
         _, back_col, next_col, _ = st.columns([1.7, 0.8, 0.8, 1.7])
@@ -2973,7 +2988,8 @@ if st.session_state.current_hu is not None:
         </body>
         </html>
         """
-        components.html(single_canvas_html, height=680)
+        render_custom_html(single_canvas_html, height=680)
+
 
         st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
         _, back_col, next_col, _ = st.columns([1.7, 0.8, 0.8, 1.7])
