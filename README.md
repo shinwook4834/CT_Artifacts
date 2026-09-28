@@ -3,11 +3,11 @@ title: ChemoPort CT-MAR Studio
 emoji: 🩺
 colorFrom: blue
 colorTo: green
-sdk: streamlit
-sdk_version: 1.51.0
+sdk: gradio
 app_file: app.py
 pinned: false
 license: mit
+
 ---
 
 # ChemoPort CT-MAR Studio 🩺⚡
