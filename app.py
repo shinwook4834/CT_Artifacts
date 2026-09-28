@@ -25,6 +25,17 @@ try:
 except ImportError:
     HAS_IMAGE_SLIDER = False
 
+# ZeroGPU support (Hugging Face Spaces). Falls back to a no-op decorator locally.
+try:
+    import spaces
+    HAS_ZERO_GPU = True
+except ImportError:
+    HAS_ZERO_GPU = False
+    class spaces:  # noqa: N801
+        @staticmethod
+        def GPU(fn):
+            return fn
+
 import pydicom
 from pydicom.dataset import Dataset, FileMetaDataset
 from pydicom.uid import ExplicitVRLittleEndian, generate_uid
@@ -151,6 +162,7 @@ def get_window_levels(preset: str, custom_wc: float, custom_ww: float) -> Tuple[
     return float(custom_wc), float(max(1.0, custom_ww))
 
 
+@spaces.GPU
 def handle_upload(files: List[Any], state: Dict[str, Any]):
     if not files:
         return (
@@ -235,6 +247,7 @@ def handle_upload(files: List[Any], state: Dict[str, Any]):
     )
 
 
+@spaces.GPU
 def handle_load_demo(state: Dict[str, Any]):
     slices = generate_default_demo_series()
     best_idx = find_chemoport_slice_index(slices)
@@ -306,6 +319,7 @@ def handle_slice_change(slice_num: int, preset: str, custom_wc: float, custom_ww
     return img_orig, slider_val, diff_colored, diag_info
 
 
+@spaces.GPU
 def handle_recompute_pipeline(inpaint_strength: float, preset: str, custom_wc: float, custom_ww: float, state: Dict[str, Any]):
     if not state or "slices" not in state or not state["slices"]:
         return None, None, None, "No scan loaded to recompute."
