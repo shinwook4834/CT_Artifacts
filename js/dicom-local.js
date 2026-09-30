@@ -101,7 +101,7 @@ export class LocalDicomLoader {
       try {
         const slice = LocalDicomLoader.parseDicomBuffer(buffer, entry.name);
         if (slice) slices.push(slice);
-      } catch (_) {}
+      } catch (err) {\n        console.warn("Zip entry failed:", entry.name, err);\n      }
       if (onProgress && i % 5 === 0) onProgress(Math.round((i / total) * 100));
     }
     return slices;
@@ -154,7 +154,7 @@ export class LocalDicomLoader {
       sliceThickness: thickness,
       windowCenter: wc,
       windowWidth: ww,
-      raw: rawInt16,
+      raw: rawArray,
       hu: huArray,
       buffer: buffer,
       dataSet: dataSet,
