@@ -2512,10 +2512,6 @@ if st.session_state.current_hu is not None:
               <div class="glass-viewer-header">
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <span class="apple-pill pill-orig">ORIGINAL CT</span>
-                  <span id="contour-status-badge" class="apple-pill pill-normal-anatomy"><span style="color:#10b981;font-size:0.9em;">✓</span> Normal CT Anatomy</span>
-                  <button id="btn-reset-single" class="apple-pill pill-reset" style="display: none;" title="Double-click or click to reset 1x full view">
-                    ↺ Reset Zoom <span id="zoom-factor-single"></span>
-                  </button>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <span id="slice-badge-single" style="font-size: 0.82rem; color: #0f172a; font-weight: 700;">{slice_badge_str}</span>
