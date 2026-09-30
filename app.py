@@ -6,6 +6,24 @@
 from __future__ import annotations
 
 import os
+import sys
+
+# Auto-dispatch to app_streamlit.py if running in a Streamlit environment (e.g. Streamlit Cloud)
+_is_streamlit = False
+if "streamlit" in sys.modules or any("streamlit" in str(arg).lower() for arg in sys.argv[:2]):
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        _is_streamlit = get_script_run_ctx() is not None or any("streamlit" in str(arg).lower() for arg in sys.argv[:2])
+    except Exception:
+        _is_streamlit = True
+
+if _is_streamlit:
+    import runpy
+    _st_target = os.path.join(os.path.dirname(__file__), "app_streamlit.py")
+    if os.path.exists(_st_target):
+        runpy.run_path(_st_target, run_name="__main__")
+        sys.exit(0)
+
 import io
 import glob
 import uuid
@@ -680,5 +698,7 @@ with gr.Blocks(title="ChemoPort CT-MAR Studio") as demo:
     )
 
 if __name__ == "__main__":
-    demo.queue().launch(server_name="0.0.0.0", server_port=7860, theme=custom_theme, css=custom_css)
+    server_port = int(os.environ.get("PORT", os.environ.get("GRADIO_SERVER_PORT", 7860)))
+    server_name = os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0")
+    demo.queue().launch(server_name=server_name, server_port=server_port, theme=custom_theme, css=custom_css)
 

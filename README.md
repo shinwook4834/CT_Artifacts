@@ -43,8 +43,11 @@ cd ChemoPort-CT-MAR-Studio
 # Install dependencies
 pip install -r requirements.txt
 
-# Launch the Streamlit application
-streamlit run app.py
+# Launch the Gradio Studio (HF Spaces version)
+python app.py
+
+# Or launch the Streamlit Studio
+streamlit run app_streamlit.py
 ```
 
 ---
