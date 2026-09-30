@@ -12,7 +12,18 @@ export class LocalDicomLoader {
       const file = files[i];
       const name = file.name.toLowerCase();
 
-      if (name.endsWith(".zip")) {
+      // Check if ZIP by extension or magic bytes (PK\x03\x04)
+      let isZip = name.endsWith(".zip");
+      if (!isZip && file.size > 4) {
+        try {
+          const header = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+          if (header[0] === 0x50 && header[1] === 0x4B && header[2] === 0x03 && header[3] === 0x04) {
+            isZip = true;
+          }
+        } catch (_) {}
+      }
+
+      if (isZip) {
         // Decompress ZIP using JSZip
         const zipSlices = await LocalDicomLoader.parseZipFile(file, (p) => {
           if (onProgress) onProgress(Math.round((i / totalFiles) * 100 + (p * 0.8) / totalFiles));
@@ -24,7 +35,7 @@ export class LocalDicomLoader {
           const slice = await LocalDicomLoader.parseDicomFile(file);
           if (slice) slices.push(slice);
         } catch (e) {
-          // Ignore non-dicom files
+          console.warn("Failed parsing file:", file.name, e);
         }
         if (onProgress) {
           onProgress(Math.round(((i + 1) / totalFiles) * 100));
@@ -33,7 +44,7 @@ export class LocalDicomLoader {
     }
 
     if (slices.length === 0) {
-      throw new Error("No valid CT DICOM slices could be parsed from the files.");
+      throw new Error("No valid CT DICOM slices could be parsed from the selected files.");
     }
 
     // Sort slices by InstanceNumber
@@ -87,10 +98,12 @@ export class LocalDicomLoader {
   }
 
   static async parseZipFile(file, onProgress) {
-    if (typeof JSZip === "undefined") {
+    const jszip = typeof window !== "undefined" && window.JSZip ? window.JSZip : (typeof JSZip !== "undefined" ? JSZip : null);
+    if (!jszip) {
       throw new Error("JSZip library not loaded");
     }
-    const zip = await JSZip.loadAsync(file);
+    const arrayBuffer = await file.arrayBuffer();
+    const zip = await jszip.loadAsync(arrayBuffer);
     const slices = [];
     const entries = Object.values(zip.files).filter((f) => !f.dir && !f.name.includes("__MACOSX") && !f.name.startsWith("."));
     const total = entries.length;
@@ -101,25 +114,34 @@ export class LocalDicomLoader {
       try {
         const slice = LocalDicomLoader.parseDicomBuffer(buffer, entry.name);
         if (slice) slices.push(slice);
-      } catch (err) {\n        console.warn("Zip entry failed:", entry.name, err);\n      }
+      } catch (err) {
+        console.warn("Zip entry failed:", entry.name, err);
+      }
       if (onProgress && i % 5 === 0) onProgress(Math.round((i / total) * 100));
     }
     return slices;
   }
 
   static parseDicomBuffer(buffer, filename = "") {
-    if (typeof dicomParser === "undefined") {
+    const parser = typeof window !== "undefined" && window.dicomParser ? window.dicomParser : (typeof dicomParser !== "undefined" ? dicomParser : null);
+    if (!parser) {
       throw new Error("dicomParser library not loaded");
     }
+    let dataSet;
     const byteArray = new Uint8Array(buffer);
-    const dataSet = dicomParser.parseDicom(byteArray);
+    try {
+      dataSet = parser.parseDicom(byteArray);
+    } catch (e) {
+      console.warn("dicomParser failed for", filename, e);
+      return null;
+    }
 
     const rows = dataSet.uint16("x00280010") || 512;
     const cols = dataSet.uint16("x00280011") || 512;
-    const slope = dataSet.floatString("x00281053") || 1.0;
-    const intercept = dataSet.floatString("x00281052") || 0.0;
-    const wc = dataSet.floatString("x00281050") || 40.0;
-    const ww = dataSet.floatString("x00281051") || 350.0;
+    const slope = dataSet.floatString("x00281053") !== undefined ? dataSet.floatString("x00281053") : 1.0;
+    const intercept = dataSet.floatString("x00281052") !== undefined ? dataSet.floatString("x00281052") : 0.0;
+    const wc = dataSet.floatString("x00281050") !== undefined ? dataSet.floatString("x00281050") : 40.0;
+    const ww = dataSet.floatString("x00281051") !== undefined ? dataSet.floatString("x00281051") : 350.0;
     const instanceNum = dataSet.intString("x00200013") || 1;
     const seriesDesc = dataSet.string("x0008103e") || "CT Series";
     const pixelSpacingStr = dataSet.string("x00280030");
@@ -162,7 +184,6 @@ export class LocalDicomLoader {
   }
 
   static extractContours(huArray) {
-    // Fast port center detection
     let portPoints = [];
     let artPoints = [];
     let portPx = 0;
