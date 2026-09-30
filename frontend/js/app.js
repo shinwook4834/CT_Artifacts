@@ -3,13 +3,13 @@
  * Dual-Mode: Uses FastAPI Backend (16GB RAM) if available, or 100% Client-Side Static if hosted on HF Static Space.
  */
 
-import { api } from "./api.js?v=2.0.2";
-import { LocalDicomLoader } from "./dicom-local.js?v=2.0.2";
-import { MedicalViewport } from "./viewport.js?v=2.0.2";
-import { ContourOverlay } from "./inspection.js?v=2.0.2";
-import { InspectionGlassComparator } from "./comparator.js?v=2.0.2";
-import { aiEngine } from "./onnx-mar.js?v=2.0.2";
-import { ProfileChart } from "./export-view.js?v=2.0.2";
+import { api } from "./api.js?v=2.0.3";
+import { LocalDicomLoader } from "./dicom-local.js?v=2.0.3";
+import { MedicalViewport } from "./viewport.js?v=2.0.3";
+import { ContourOverlay } from "./inspection.js?v=2.0.3";
+import { InspectionGlassComparator } from "./comparator.js?v=2.0.3";
+import { aiEngine } from "./onnx-mar.js?v=2.0.3";
+import { ProfileChart } from "./export-view.js?v=2.0.3";
 
 class AppState {
   constructor() {
@@ -37,17 +37,21 @@ let overlay = null;
 let comparator = null;
 let profileChart = null;
 
-// Initialize when DOM is ready
-document.addEventListener("DOMContentLoaded", async () => {
+// Initialize when DOM is ready (supports both early and deferred loading)
+function initApp() {
   initUI();
   initDropzone();
   initViewports();
   initStepNavigation();
   initPresets();
-
-  // Try pre-initializing WebGPU AI engine in background
   aiEngine.init().catch(() => {});
-});
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initApp);
+} else {
+  initApp();
+}
 
 function initUI() {
   updateStepUI(1);
@@ -89,7 +93,7 @@ function initDropzone() {
 
   if (!dropzone || !fileInput) return;
 
-  dropzone.addEventListener("click", () => fileInput.click());
+  // Native label handles file-input click
 
   dropzone.addEventListener("dragover", (e) => {
     e.preventDefault();

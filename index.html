@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ChemoPort CT-MAR Studio</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🩺</text></svg>">
-  <link rel="stylesheet" href="./css/style.css?v=2.0.2">
+  <link rel="stylesheet" href="./css/style.css?v=2.0.3">
   <style>
     /* SPA Specific Additions & Cleanups */
     .app-header {
@@ -225,7 +225,7 @@
     </div>
 
     <!-- Dropzone Area -->
-    <div id="dropzone" class="dropzone-box">
+    <label for="file-input" id="dropzone" class="dropzone-box" style="cursor: pointer;">
       <!-- Normal Dropzone Content -->
       <div id="dropzone-content" style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
         <svg style="color: #0d9488; width: 58px; height: 58px; filter: drop-shadow(0 6px 14px rgba(13, 148, 136, 0.25));" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -235,7 +235,7 @@
         </svg>
         <span style="font-size: 1.18rem; color: #0f172a; font-weight: 750;">Drag and drop CT DICOM or ZIP files here</span>
         <small style="font-size: 0.86rem; color: #64748b; font-weight: 500;">Limit 1GB per series • DICOM (.dcm), ZIP</small>
-        <button class="btn-primary" style="margin-top: 10px; pointer-events: none;">Browse Files</button>
+        <span class="btn-primary" style="margin-top: 10px; display: inline-block;">Browse Files</span>
       </div>
 
       <!-- In-place Upload Progress -->
@@ -253,7 +253,7 @@
         </div>
       </div>
       <input type="file" id="file-input" multiple accept=".dcm,.zip" style="display: none;">
-    </div>
+    </label>
 
     <!-- Loaded Dataset Summary Card -->
     <div id="dataset-summary-card" class="viewer-card" style="display: none; max-width: 860px; margin: 0 auto;">
@@ -435,6 +435,6 @@
   <!-- ONNX Runtime Web for Client GPU AI Inference -->
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
   <!-- Main Application Script (ES Module) -->
-  <script type="module" src="./js/app.js?v=2.0.2"></script>
+  <script type="module" src="./js/app.js?v=2.0.3"></script>
 </body>
 </html>
