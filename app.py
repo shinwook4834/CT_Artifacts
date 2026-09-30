@@ -698,7 +698,9 @@ with gr.Blocks(title="ChemoPort CT-MAR Studio") as demo:
     )
 
 if __name__ == "__main__":
-    server_port = int(os.environ.get("PORT", os.environ.get("GRADIO_SERVER_PORT", 7860)))
-    server_name = os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0")
-    demo.queue().launch(server_name=server_name, server_port=server_port, theme=custom_theme, css=custom_css)
+    import uvicorn
+    server_port = int(os.environ.get("PORT", 7860))
+    server_name = os.environ.get("HOST", "0.0.0.0")
+    print(f"🚀 Starting ChemoPort CT-MAR Studio on {server_name}:{server_port}...")
+    uvicorn.run("backend.main:app", host=server_name, port=server_port, reload=False)
 

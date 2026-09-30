@@ -1,0 +1,417 @@
+/**
+ * ChemoPort CT-MAR Studio - SPA Master Controller
+ * Glues FastAPI Backend (2 vCPU + 16GB RAM) with Client WebGL / WebGPU Viewports.
+ */
+
+import { api } from "./api.js";
+import { MedicalViewport } from "./viewport.js";
+import { ContourOverlay } from "./inspection.js";
+import { InspectionGlassComparator } from "./comparator.js";
+import { aiEngine } from "./onnx-mar.js";
+import { ProfileChart } from "./export-view.js";
+
+class AppState {
+  constructor() {
+    this.currentStep = 1;
+    this.scanId = null;
+    this.totalSlices = 0;
+    this.currentSliceIdx = 0;
+    this.chemoportSliceIdx = 0;
+    this.scanMeta = null;
+    this.contours = [];
+
+    // Viewport presets
+    this.wc = 40.0;
+    this.ww = 350.0;
+    this.aiWeight = 0.5;
+  }
+}
+
+const state = new AppState();
+
+// Viewport singletons
+let viewport = null;
+let overlay = null;
+let comparator = null;
+let profileChart = null;
+
+// Initialize when DOM is ready
+document.addEventListener("DOMContentLoaded", async () => {
+  initUI();
+  initDropzone();
+  initViewports();
+  initStepNavigation();
+  initPresets();
+
+  // Try pre-initializing WebGPU AI engine in background
+  aiEngine.init().catch(() => {});
+});
+
+function initUI() {
+  updateStepUI(1);
+}
+
+function updateStepUI(step) {
+  state.currentStep = step;
+
+  // Update Stepper pills
+  document.querySelectorAll(".step-item").forEach((item) => {
+    const s = parseInt(item.dataset.step, 10);
+    item.classList.remove("active", "completed");
+    if (s === step) item.classList.add("active");
+    else if (s < step) item.classList.add("completed");
+  });
+
+  // Switch active step containers
+  document.querySelectorAll(".step-container").forEach((el) => {
+    el.style.display = "none";
+  });
+
+  const activeContainer = document.getElementById(`step-${step}-container`);
+  if (activeContainer) activeContainer.style.display = "block";
+
+  // Trigger step-specific load
+  if (step === 2) loadStep2();
+  else if (step === 3) loadStep3();
+  else if (step === 4) loadStep4();
+}
+
+function initDropzone() {
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("file-input");
+  const progressBox = document.getElementById("upload-progress-box");
+  const progressPct = document.getElementById("upload-pct-text");
+  const progressBar = document.getElementById("upload-progress-bar");
+  const dropzoneContent = document.getElementById("dropzone-content");
+  const summaryCard = document.getElementById("dataset-summary-card");
+
+  if (!dropzone || !fileInput) return;
+
+  dropzone.addEventListener("click", () => fileInput.click());
+
+  dropzone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropzone.classList.add("dragover");
+  });
+
+  dropzone.addEventListener("dragleave", () => {
+    dropzone.classList.remove("dragover");
+  });
+
+  dropzone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropzone.classList.remove("dragover");
+    if (e.dataTransfer.files.length > 0) {
+      handleFiles(e.dataTransfer.files);
+    }
+  });
+
+  fileInput.addEventListener("change", (e) => {
+    if (e.target.files.length > 0) {
+      handleFiles(e.target.files);
+    }
+  });
+
+  async function handleFiles(files) {
+    dropzoneContent.style.display = "none";
+    progressBox.style.display = "flex";
+    progressPct.innerText = "2%";
+    progressBar.style.width = "2%";
+
+    try {
+      const data = await api.uploadScan(files, (pct) => {
+        const clamped = Math.max(2, Math.min(99, pct));
+        progressPct.innerText = `${clamped}%`;
+        progressBar.style.width = `${clamped}%`;
+      });
+
+      // Upload and volume parsing complete
+      progressPct.innerText = "100%";
+      progressBar.style.width = "100%";
+
+      state.scanId = data.scan_id;
+      state.totalSlices = data.total_slices;
+      state.chemoportSliceIdx = data.chemoport_slice_idx;
+      state.currentSliceIdx = data.chemoport_slice_idx;
+      state.scanMeta = data;
+      state.contours = data.contours || [];
+
+      // Update Summary Card
+      document.getElementById("sum-source-name").innerText = data.series_description || "CT Series";
+      document.getElementById("sum-port-slice").innerText = `Slice ${data.chemoport_slice_idx + 1} / ${data.total_slices}`;
+      document.getElementById("sum-dimensions").innerText = `512 × 512 (${data.pixel_spacing[0].toFixed(2)} mm)`;
+      document.getElementById("sum-slice-count").innerText = `${data.total_slices} DICOM Slices`;
+
+      setTimeout(() => {
+        progressBox.style.display = "none";
+        dropzone.style.display = "none";
+        summaryCard.style.display = "block";
+        document.getElementById("nav-next-1").disabled = false;
+        // Auto transition to Step 2
+        updateStepUI(2);
+      }, 350);
+    } catch (err) {
+      alert(`Error loading scan: ${err.message}`);
+      dropzoneContent.style.display = "flex";
+      progressBox.style.display = "none";
+    }
+  }
+
+  // Upload another scan button
+  document.getElementById("btn-reset-scan")?.addEventListener("click", () => {
+    state.scanId = null;
+    summaryCard.style.display = "none";
+    dropzone.style.display = "flex";
+    dropzoneContent.style.display = "flex";
+    fileInput.value = "";
+    document.getElementById("nav-next-1").disabled = true;
+    updateStepUI(1);
+  });
+}
+
+function initViewports() {
+  const canvasVp = document.getElementById("canvas-viewport");
+  const canvasOverlay = document.getElementById("canvas-overlay");
+  const canvasComp = document.getElementById("canvas-comparator");
+  const canvasProf = document.getElementById("canvas-profile");
+
+  if (canvasVp) {
+    viewport = new MedicalViewport(canvasVp, {
+      onWindowLevelChange: (wc, ww) => {
+        state.wc = wc;
+        state.ww = ww;
+        updateWlDisplay();
+      },
+      onSliceChange: (delta) => {
+        changeSlice(state.currentSliceIdx + delta);
+      },
+    });
+  }
+
+  if (canvasOverlay) {
+    overlay = new ContourOverlay(canvasOverlay);
+  }
+
+  if (canvasComp) {
+    comparator = new InspectionGlassComparator(canvasComp);
+  }
+
+  if (canvasProf) {
+    profileChart = new ProfileChart(canvasProf);
+  }
+
+  // Slice slider in step 2
+  const sliceSlider = document.getElementById("slice-slider");
+  if (sliceSlider) {
+    sliceSlider.addEventListener("input", (e) => {
+      changeSlice(parseInt(e.target.value, 10));
+    });
+  }
+}
+
+async function changeSlice(newIdx) {
+  if (!state.scanId || state.totalSlices === 0) return;
+  const clamped = Math.max(0, Math.min(state.totalSlices - 1, newIdx));
+  state.currentSliceIdx = clamped;
+
+  // Update slider & badges
+  const slider = document.getElementById("slice-slider");
+  if (slider) slider.value = clamped;
+  document.querySelectorAll(".slice-indicator-text").forEach((el) => {
+    el.innerText = `Slice ${clamped + 1} / ${state.totalSlices}`;
+  });
+
+  // Fetch raw slice Int16 buffer and render on WebGL
+  try {
+    const rawBuffer = await api.getRawSlice(state.scanId, clamped);
+    if (viewport) viewport.loadInt16Slice(rawBuffer);
+
+    // Contours overlay
+    if (overlay && state.contours[clamped]) {
+      overlay.setContours(state.contours[clamped]);
+      updateContourBadge(state.contours[clamped]);
+    }
+  } catch (err) {
+    console.error("Slice load error:", err);
+  }
+}
+
+function updateContourBadge(cnt) {
+  const badge = document.getElementById("badge-contour-status");
+  if (!badge) return;
+  if (cnt && cnt.port && cnt.port.length > 0) {
+    badge.innerText = `🩺 ChemoPort: ${cnt.port_px || 0} px • Artifacts: ${cnt.art_px || 0} px`;
+    badge.style.color = "#0d9488";
+  } else {
+    badge.innerText = "Normal CT Anatomy";
+    badge.style.color = "#64748b";
+  }
+}
+
+function updateWlDisplay() {
+  const wlText = `WL: ${Math.round(state.wc)} / WW: ${Math.round(state.ww)}`;
+  document.querySelectorAll(".badge-wl-display").forEach((el) => {
+    el.innerText = wlText;
+  });
+}
+
+function initPresets() {
+  const presets = {
+    "preset-soft": [40, 350],
+    "preset-bone": [400, 1800],
+    "preset-lung": [-600, 1500],
+    "preset-metal": [1200, 4000],
+    "preset-all": [10760, 33530],
+  };
+
+  Object.entries(presets).forEach(([id, [wc, ww]]) => {
+    document.querySelectorAll(`.${id}`).forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.wc = wc;
+        state.ww = ww;
+        if (viewport) viewport.setWindowLevel(wc, ww);
+        if (comparator) comparator.setWindowLevel(wc, ww);
+        updateWlDisplay();
+      });
+    });
+  });
+
+  // Contour toggle buttons
+  document.getElementById("btn-toggle-port")?.addEventListener("click", function () {
+    this.classList.toggle("active");
+    if (overlay) overlay.togglePort(this.classList.contains("active"));
+  });
+
+  document.getElementById("btn-toggle-art")?.addEventListener("click", function () {
+    this.classList.toggle("active");
+    if (overlay) overlay.toggleArtifacts(this.classList.contains("active"));
+  });
+
+  // Reset zoom button
+  document.querySelectorAll(".btn-reset-zoom").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (viewport) viewport.resetZoom();
+    });
+  });
+}
+
+async function loadStep2() {
+  if (!state.scanId) return;
+  const slider = document.getElementById("slice-slider");
+  if (slider) {
+    slider.max = state.totalSlices - 1;
+    slider.value = state.currentSliceIdx;
+  }
+  await changeSlice(state.currentSliceIdx);
+}
+
+async function loadStep3() {
+  if (!state.scanId || !comparator) return;
+  const idx = state.currentSliceIdx;
+
+  try {
+    const origHu = await api.getRawSlice(state.scanId, idx);
+    const reconHu = await api.getReconSlice(state.scanId, idx);
+    comparator.setWindowLevel(state.wc, state.ww);
+    comparator.setSlices(origHu, reconHu);
+  } catch (err) {
+    console.error("Step 3 slice load error:", err);
+  }
+
+  // Inspection glass size controls
+  document.querySelectorAll(".btn-glass-size").forEach((btn) => {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".btn-glass-size").forEach((b) => b.classList.remove("active"));
+      this.classList.add("active");
+      comparator.setGlassSize(parseInt(this.dataset.size, 10));
+    });
+  });
+
+  document.getElementById("btn-toggle-glass")?.addEventListener("click", function () {
+    this.classList.toggle("active");
+    comparator.toggleGlass(this.classList.contains("active"));
+  });
+
+  // Run AI restoration button
+  document.getElementById("btn-run-ai")?.addEventListener("click", async () => {
+    const btn = document.getElementById("btn-run-ai");
+    btn.disabled = true;
+    btn.innerText = "⚡ Running AI MAR...";
+
+    try {
+      const origHu = await api.getRawSlice(state.scanId, state.currentSliceIdx);
+      let reconHu = null;
+
+      // Try running client WebGPU first!
+      if (aiEngine.isReady) {
+        console.log("Running on Client WebGPU...");
+        reconHu = await aiEngine.runInference(origHu);
+      } else {
+        console.log("Running on Server 2 vCPU + 16GB RAM...");
+        await api.runReconstruction(state.scanId, state.currentSliceIdx, state.aiWeight);
+        reconHu = await api.getReconSlice(state.scanId, state.currentSliceIdx);
+      }
+
+      comparator.setSlices(origHu, reconHu);
+      alert("✨ AI-MAR Restoration complete!");
+    } catch (e) {
+      alert(`AI Restoration error: ${e.message}`);
+    } finally {
+      btn.disabled = false;
+      btn.innerText = "▶️ Run AI Restoration";
+    }
+  });
+}
+
+async function loadStep4() {
+  if (!state.scanId || !profileChart) return;
+  try {
+    const profileData = await api.getLineProfile(state.scanId, state.currentSliceIdx);
+    profileChart.drawProfile(profileData.orig_profile, profileData.recon_profile, profileData.y_row);
+  } catch (err) {
+    console.error("Profile chart error:", err);
+  }
+
+  // Setup download links
+  const anonCheck = document.getElementById("check-anonymize");
+  const isAnon = () => (anonCheck ? anonCheck.checked : false);
+
+  const btnDcm = document.getElementById("btn-download-dcm");
+  if (btnDcm) {
+    btnDcm.onclick = () => {
+      window.location.href = api.getExportDicomUrl(state.scanId, state.currentSliceIdx, isAnon());
+    };
+  }
+
+  const btnZip = document.getElementById("btn-download-zip");
+  if (btnZip) {
+    btnZip.onclick = () => {
+      window.location.href = api.getExportZipUrl(state.scanId, isAnon());
+    };
+  }
+}
+
+function initStepNavigation() {
+  // Step 1 -> 2
+  document.getElementById("nav-next-1")?.addEventListener("click", () => updateStepUI(2));
+  // Step 2 -> 1
+  document.getElementById("nav-back-2")?.addEventListener("click", () => updateStepUI(1));
+  // Step 2 -> 3
+  document.getElementById("nav-next-2")?.addEventListener("click", () => updateStepUI(3));
+  // Step 3 -> 2
+  document.getElementById("nav-back-3")?.addEventListener("click", () => updateStepUI(2));
+  // Step 3 -> 4
+  document.getElementById("nav-next-3")?.addEventListener("click", () => updateStepUI(4));
+  // Step 4 -> 3
+  document.getElementById("nav-back-4")?.addEventListener("click", () => updateStepUI(3));
+
+  // Stepper pill clicks
+  document.querySelectorAll(".step-item").forEach((pill) => {
+    pill.addEventListener("click", () => {
+      const s = parseInt(pill.dataset.step, 10);
+      if (s === 1 || state.scanId) {
+        updateStepUI(s);
+      }
+    });
+  });
+}

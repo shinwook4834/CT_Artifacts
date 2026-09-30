@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChemoPort CT-MAR Studio</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🩺</text></svg>">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    /* SPA Specific Additions & Cleanups */
+    .app-header {
+      text-align: center;
+      padding: 24px 0 14px 0;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .app-title {
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.6px;
+      margin: 0 0 4px 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    .app-subtitle {
+      font-size: 0.92rem;
+      color: #475569;
+      margin: 0 auto 12px auto;
+      line-height: 1.45;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 14px;
+      border-radius: 9999px;
+      background: rgba(13, 148, 136, 0.1);
+      border: 1px solid rgba(13, 148, 136, 0.25);
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #0f766e;
+    }
+    .step-container {
+      max-width: 920px;
+      margin: 0 auto 40px auto;
+    }
+    .viewer-card {
+      background: rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(28px) saturate(180%);
+      -webkit-backdrop-filter: blur(28px) saturate(180%);
+      border: 1.5px solid rgba(255, 255, 255, 0.95);
+      border-radius: 26px;
+      padding: 24px 28px;
+      box-shadow: 0 16px 45px -10px rgba(15, 118, 110, 0.08), inset 0 1px 1px #ffffff;
+      margin-bottom: 24px;
+      position: relative;
+    }
+    .canvas-wrapper {
+      position: relative;
+      width: 512px;
+      height: 512px;
+      margin: 0 auto;
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 12px 35px -8px rgba(0, 0, 0, 0.25);
+      background: #090d16;
+      cursor: crosshair;
+    }
+    .canvas-overlay-pos {
+      position: absolute;
+      left: 0;
+      top: 0;
+      pointer-events: none;
+    }
+    .hud-overlay {
+      position: absolute;
+      top: 12px;
+      display: flex;
+      gap: 6px;
+      z-index: 10;
+    }
+    .hud-left { left: 12px; }
+    .hud-right { right: 12px; }
+    .hud-badge {
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(12px);
+      color: #f8fafc;
+      padding: 5px 12px;
+      border-radius: 9999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      user-select: none;
+    }
+    .hud-btn {
+      background: rgba(15, 23, 42, 0.72);
+      backdrop-filter: blur(12px);
+      color: #cbd5e1;
+      padding: 5px 10px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .hud-btn:hover, .hud-btn.active {
+      background: #0d9488;
+      color: #ffffff;
+      border-color: #0d9488;
+    }
+    .btn-toggle.active {
+      background: #0d9488;
+      color: #ffffff;
+    }
+    .nav-row {
+      display: flex;
+      justify-content: center;
+      gap: 14px;
+      margin-top: 24px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
+      color: #ffffff;
+      border-radius: 9999px;
+      padding: 12px 32px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(13, 148, 136, 0.32);
+      transition: all 0.2s ease;
+    }
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(13, 148, 136, 0.45);
+    }
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.9);
+      color: #475569;
+      border-radius: 9999px;
+      padding: 12px 28px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      border: 1px solid rgba(203, 213, 225, 0.8);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background: #ffffff;
+      color: #0f172a;
+      border-color: #94a3b8;
+    }
+    .dropzone-box {
+      background: rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(28px) saturate(180%);
+      border: 2px dashed rgba(13, 148, 136, 0.45);
+      border-radius: 26px;
+      min-height: 330px;
+      padding: 58px 36px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 16px;
+      cursor: pointer;
+      box-shadow: 0 16px 45px -10px rgba(15, 118, 110, 0.08), inset 0 1px 1px #ffffff;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      box-sizing: border-box;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    .dropzone-box:hover, .dropzone-box.dragover {
+      background: rgba(240, 253, 250, 0.92);
+      border-color: #0d9488;
+      transform: translateY(-3px);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top App Header -->
+  <header class="app-header">
+    <h1 class="app-title">
+      <span>🩺</span>
+      <span>ChemoPort CT-MAR Studio</span>
+    </h1>
+    <p class="app-subtitle">
+      3D CAD Prior-Guided Deep Learning Metal Artifact Reduction & Dosimetric Accuracy
+    </p>
+    <div class="status-badge">
+      <span style="font-size: 0.7rem;">⚡</span>
+      <span>Hybrid Engine: Server 2 vCPU + 16GB RAM + Client WebGPU</span>
+    </div>
+  </header>
+
+  <!-- Workflow Stepper Navigation -->
+  <nav class="workflow-stepper">
+    <div class="step-item active" data-step="1"><span>1</span> Image Loading</div>
+    <div class="step-arrow">→</div>
+    <div class="step-item" data-step="2"><span>2</span> Artifact Inspection</div>
+    <div class="step-arrow">→</div>
+    <div class="step-item" data-step="3"><span>3</span> AI-MAR Reconstruction</div>
+    <div class="step-arrow">→</div>
+    <div class="step-item" data-step="4"><span>4</span> Save & Export</div>
+  </nav>
+
+  <!-- STEP 1: IMAGE LOADING -->
+  <main id="step-1-container" class="step-container">
+    <div class="quillbot-hero-wrapper">
+      <div style="font-size: 1.35rem; font-weight: 800; color: #0f172a; letter-spacing: -0.4px; margin-bottom: 4px;">
+        Convert & Restore Chemo Port CT Scans
+      </div>
+      <div style="font-size: 0.88rem; color: #475569; max-width: 580px; margin: 0 auto 16px auto; line-height: 1.45;">
+        Upload clinical simulation CTs to remove high-density titanium metal streaks and restore supraclavicular lymph node anatomy.
+      </div>
+    </div>
+
+    <!-- Dropzone Area -->
+    <div id="dropzone" class="dropzone-box">
+      <!-- Normal Dropzone Content -->
+      <div id="dropzone-content" style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+        <svg style="color: #0d9488; width: 58px; height: 58px; filter: drop-shadow(0 6px 14px rgba(13, 148, 136, 0.25));" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
+          <path d="M12 12v9"/>
+          <path d="m16 16-4-4-4 4"/>
+        </svg>
+        <span style="font-size: 1.18rem; color: #0f172a; font-weight: 750;">Drag and drop CT DICOM or ZIP files here</span>
+        <small style="font-size: 0.86rem; color: #64748b; font-weight: 500;">Limit 1GB per series • DICOM (.dcm), ZIP</small>
+        <button class="btn-primary" style="margin-top: 10px; pointer-events: none;">Browse Files</button>
+      </div>
+
+      <!-- In-place Upload Progress -->
+      <div id="upload-progress-box" style="display: none; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
+        <svg style="color: #0d9488; width: 58px; height: 58px; filter: drop-shadow(0 6px 14px rgba(13, 148, 136, 0.25)); margin-bottom: 2px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
+          <path d="M12 12v9"/>
+          <path d="m16 16-4-4-4 4"/>
+        </svg>
+        <div id="upload-pct-text" style="font-size: 2.3rem; font-weight: 800; color: #0f172a; letter-spacing: -0.6px; margin: 4px 0 0 0; line-height: 1.1;">
+          0%
+        </div>
+        <div style="width: 320px; max-width: 85%; height: 8px; background: rgba(226, 232, 240, 0.85); border-radius: 9999px; margin-top: 14px; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);">
+          <div id="upload-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #0d9488 0%, #06b6d4 100%); border-radius: 9999px; transition: width 0.15s ease;"></div>
+        </div>
+      </div>
+      <input type="file" id="file-input" multiple accept=".dcm,.zip" style="display: none;">
+    </div>
+
+    <!-- Loaded Dataset Summary Card -->
+    <div id="dataset-summary-card" class="viewer-card" style="display: none; max-width: 860px; margin: 0 auto;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 44px; height: 44px; border-radius: 14px; background: rgba(13, 148, 136, 0.12); display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">📁</div>
+          <div>
+            <h3 id="sum-source-name" style="margin: 0; font-size: 1.15rem; color: #0f172a; font-weight: 800;">Patient CT Series</h3>
+            <p id="sum-slice-count" style="margin: 2px 0 0 0; font-size: 0.82rem; color: #64748b;">236 Slices Loaded in Server RAM</p>
+          </div>
+        </div>
+        <button id="btn-reset-scan" class="btn-secondary" style="padding: 8px 18px; font-size: 0.85rem;">🔄 Upload Different Scan</button>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 14px;">
+        <div class="hud-badge" style="background: rgba(248, 250, 252, 0.8); border: 1px solid #e2e8f0; color: #334155; padding: 10px;">
+          <div style="font-size: 0.72rem; color: #64748b;">ChemoPort Center</div>
+          <div id="sum-port-slice" style="font-size: 0.95rem; font-weight: 800; color: #0d9488; margin-top: 4px;">Slice 126 / 236</div>
+        </div>
+        <div class="hud-badge" style="background: rgba(248, 250, 252, 0.8); border: 1px solid #e2e8f0; color: #334155; padding: 10px;">
+          <div style="font-size: 0.72rem; color: #64748b;">Matrix Dimensions</div>
+          <div id="sum-dimensions" style="font-size: 0.95rem; font-weight: 800; color: #0f172a; margin-top: 4px;">512 × 512 (0.98 mm)</div>
+        </div>
+        <div class="hud-badge" style="background: rgba(248, 250, 252, 0.8); border: 1px solid #e2e8f0; color: #334155; padding: 10px;">
+          <div style="font-size: 0.72rem; color: #64748b;">Server Memory</div>
+          <div style="font-size: 0.95rem; font-weight: 800; color: #0d9488; margin-top: 4px;">16GB RAM Cached</div>
+        </div>
+        <div class="hud-badge" style="background: rgba(248, 250, 252, 0.8); border: 1px solid #e2e8f0; color: #334155; padding: 10px;">
+          <div style="font-size: 0.72rem; color: #64748b;">Anonymization</div>
+          <div style="font-size: 0.95rem; font-weight: 800; color: #0f172a; margin-top: 4px;">HIPAA PS 3.15</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="nav-row">
+      <button class="btn-secondary" disabled>← Back</button>
+      <button id="nav-next-1" class="btn-primary" disabled>Next: Artifact Inspection →</button>
+    </div>
+  </main>
+
+  <!-- STEP 2: ARTIFACT INSPECTION -->
+  <main id="step-2-container" class="step-container" style="display: none;">
+    <div class="viewer-card">
+      <!-- Header row of the viewer -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span class="hud-badge" style="background: #0f172a; color: #ffffff;">ORIGINAL CT</span>
+          <span class="hud-badge slice-indicator-text" style="background: #e2e8f0; color: #0f172a;">Slice 126 / 236</span>
+        </div>
+        <div id="badge-contour-status" class="hud-badge" style="background: rgba(13, 148, 136, 0.12); color: #0d9488; border: none;">
+          🩺 ChemoPort Detected
+        </div>
+      </div>
+
+      <!-- Canvas Viewport with Overlays -->
+      <div class="canvas-wrapper">
+        <!-- WebGL 16-bit CT Slice Viewport -->
+        <canvas id="canvas-viewport"></canvas>
+        <!-- 2D Vector Overlay for Contours -->
+        <canvas id="canvas-overlay" width="512" height="512" class="canvas-overlay-pos"></canvas>
+
+        <!-- Top-Left HUD (Window / Level) -->
+        <div class="hud-overlay hud-left">
+          <span class="hud-badge badge-wl-display">WL: 40 / WW: 350</span>
+          <button class="hud-btn preset-soft active">Soft</button>
+          <button class="hud-btn preset-bone">Bone</button>
+          <button class="hud-btn preset-lung">Lung</button>
+          <button class="hud-btn preset-metal">Metal</button>
+          <button class="hud-btn preset-all">All HU</button>
+        </div>
+
+        <!-- Top-Right HUD (Contour Toggles) -->
+        <div class="hud-overlay hud-right">
+          <button id="btn-toggle-port" class="hud-btn active">ChemoPort</button>
+          <button id="btn-toggle-art" class="hud-btn active">Artifacts</button>
+          <button class="hud-btn btn-reset-zoom">↺ Reset</button>
+        </div>
+      </div>
+
+      <!-- Slice navigation slider -->
+      <div style="display: flex; align-items: center; gap: 12px; margin-top: 16px; max-width: 512px; margin-left: auto; margin-right: auto;">
+        <span style="font-size: 0.8rem; font-weight: 700; color: #64748b;">Slice</span>
+        <input type="range" id="slice-slider" min="0" max="235" value="125" style="flex: 1; accent-color: #0d9488;">
+        <span class="slice-indicator-text" style="font-size: 0.8rem; font-weight: 700; color: #0f172a; min-width: 90px; text-align: right;">Slice 126 / 236</span>
+      </div>
+
+      <p style="text-align: center; color: #94a3b8; font-size: 0.8rem; margin: 10px 0 0 0;">
+        💡 Mouse wheel to change slices • Left drag to pan • Right drag for real-time GPU Window/Level
+      </p>
+    </div>
+
+    <div class="nav-row">
+      <button id="nav-back-2" class="btn-secondary">← Back: Image Loading</button>
+      <button id="nav-next-2" class="btn-primary">Proceed to AI-MAR →</button>
+    </div>
+  </main>
+
+  <!-- STEP 3: AI-MAR RECONSTRUCTION -->
+  <main id="step-3-container" class="step-container" style="display: none;">
+    <div class="viewer-card">
+      <!-- Header row of the viewer -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span class="hud-badge" style="background: #0d9488; color: #ffffff;">RECONSTRUCTED CT</span>
+          <span class="hud-badge slice-indicator-text" style="background: #e2e8f0; color: #0f172a;">Slice 126 / 236</span>
+        </div>
+        <button id="btn-run-ai" class="btn-primary" style="padding: 6px 18px; font-size: 0.85rem;">▶️ Run AI Restoration</button>
+      </div>
+
+      <!-- Canvas Comparator with Inspection Glass -->
+      <div class="canvas-wrapper">
+        <canvas id="canvas-comparator"></canvas>
+
+        <!-- Top-Left HUD (Window / Level) -->
+        <div class="hud-overlay hud-left">
+          <span class="hud-badge badge-wl-display">WL: 40 / WW: 350</span>
+          <button class="hud-btn preset-soft active">Soft</button>
+          <button class="hud-btn preset-bone">Bone</button>
+          <button class="hud-btn preset-lung">Lung</button>
+          <button class="hud-btn preset-metal">Metal</button>
+        </div>
+
+        <!-- Top-Right HUD (Inspection Glass Controls) -->
+        <div class="hud-overlay hud-right">
+          <button id="btn-toggle-glass" class="hud-btn active">Glass</button>
+          <button class="hud-btn btn-glass-size" data-size="80">S</button>
+          <button class="hud-btn btn-glass-size active" data-size="160">M</button>
+          <button class="hud-btn btn-glass-size" data-size="240">L</button>
+        </div>
+      </div>
+
+      <p style="text-align: center; color: #94a3b8; font-size: 0.8rem; margin: 12px 0 0 0;">
+        🔍 Hover over the image to inspect original corrupted CT inside the square glass window.
+      </p>
+    </div>
+
+    <div class="nav-row">
+      <button id="nav-back-3" class="btn-secondary">← Back: Inspection</button>
+      <button id="nav-next-3" class="btn-primary">Proceed to Verification & Export →</button>
+    </div>
+  </main>
+
+  <!-- STEP 4: SAVE & EXPORT -->
+  <main id="step-4-container" class="step-container" style="display: none;">
+    <div class="viewer-card">
+      <h3 style="margin: 0 0 14px 0; font-size: 1.15rem; color: #0f172a;">Dosimetric Verification: HU Line Profile</h3>
+      <!-- Line profile chart canvas -->
+      <div style="background: #ffffff; border-radius: 16px; padding: 10px; border: 1px solid #e2e8f0;">
+        <canvas id="canvas-profile" width="800" height="260" style="width: 100%; height: auto; display: block;"></canvas>
+      </div>
+
+      <!-- Export actions grid -->
+      <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid rgba(226, 232, 240, 0.8);">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+          <h4 style="margin: 0; color: #0f172a; font-weight: 800;">Export DICOM & Verification Report</h4>
+          <label style="font-size: 0.85rem; color: #475569; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+            <input type="checkbox" id="check-anonymize" checked style="accent-color: #0d9488;">
+            <span>Apply HIPAA PS 3.15 Anonymization</span>
+          </label>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          <button id="btn-download-dcm" class="btn-primary" style="padding: 14px; text-align: center;">
+            💾 Download Current Slice DICOM (.dcm)
+          </button>
+          <button id="btn-download-zip" class="btn-secondary" style="padding: 14px; text-align: center; border-color: #0d9488; color: #0d9488; font-weight: 700;">
+            📦 Download Full Series ZIP Archive (.zip)
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="nav-row">
+      <button id="nav-back-4" class="btn-secondary">← Back to AI-MAR</button>
+    </div>
+  </main>
+
+  <!-- ONNX Runtime Web for Client GPU AI Inference -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  <!-- Main Application Script (ES Module) -->
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
