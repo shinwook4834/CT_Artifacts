@@ -43,9 +43,39 @@ export class MedicalViewport {
     const gl = this.gl;
 
     // Shaders
-    const vsSource = ;
+    const vsSource = [
+      "attribute vec2 a_position;",
+      "attribute vec2 a_texCoord;",
+      "uniform vec2 u_zoom;",
+      "uniform vec2 u_pan;",
+      "varying vec2 v_texCoord;",
+      "void main() {",
+      "  gl_Position = vec4(a_position, 0.0, 1.0);",
+      "  v_texCoord = (a_texCoord - 0.5 - u_pan) / u_zoom + 0.5;",
+      "}"
+    ].join("\n");
 
-    const fsSource = ;
+    const fsSource = [
+      "precision highp float;",
+      "uniform sampler2D u_image;",
+      "uniform float u_wc;",
+      "uniform float u_ww;",
+      "varying vec2 v_texCoord;",
+      "void main() {",
+      "  if (v_texCoord.x < 0.0 || v_texCoord.x > 1.0 || v_texCoord.y < 0.0 || v_texCoord.y > 1.0) {",
+      "    gl_FragColor = vec4(0.04, 0.06, 0.08, 1.0);",
+      "    return;",
+      "  }",
+      "  vec4 tex = texture2D(u_image, v_texCoord);",
+      "  // Unpack unsigned 16-bit value from R (low byte) and G (high byte)",
+      "  float low = floor(tex.r * 255.0 + 0.5);",
+      "  float high = floor(tex.g * 255.0 + 0.5);",
+      "  float hu = (low + high * 256.0) - 32768.0;",
+      "  float lower = u_wc - (u_ww * 0.5);",
+      "  float gray = clamp((hu - lower) / u_ww, 0.0, 1.0);",
+      "  gl_FragColor = vec4(gray, gray, gray, 1.0);",
+      "}"
+    ].join("\n");
 
     this.program = this.createProgram(gl, vsSource, fsSource);
     gl.useProgram(this.program);
