@@ -3,7 +3,7 @@ title: CTAF Studio
 emoji: 🧬
 colorFrom: blue
 colorTo: indigo
-sdk: docker
+sdk: static
 app_port: 7860
 pinned: false
 ---
