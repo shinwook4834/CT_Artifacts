@@ -32,6 +32,7 @@ def detect_approach_a_slice_contours(
     port_anchor: Optional[Tuple[float, float]] = None,
     max_anchor_dist_px: float = 60.0,
     peri_zone_radius_px: float = 90.0,
+    is_transition_slice: bool = False,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, np.ndarray]]:
     """Segments ChemoPort metal and radiating streak artifacts for a single 2D CT slice.
 
@@ -106,16 +107,31 @@ def detect_approach_a_slice_contours(
 
     # If titanium core (>=1800 HU) is absent on this boundary slice,
     # detect port casing / catheter assembly (HU >= 220 in the non-bone subcutaneous pectoral pocket)
-    if not has_port and port_anchor is not None:
+    # ONLY if this slice is an immediate transition slice adjacent to confirmed titanium metal!
+    if not has_port and port_anchor is not None and is_transition_slice:
         anchor_y, anchor_x = port_anchor
         Y, X = np.ogrid[:h, :w]
         dist_anc = np.sqrt((Y - anchor_y) ** 2 + (X - anchor_x) ** 2)
-        pocket_casing = (dist_anc <= 35.0) & priors.body_mask & (~priors.lung_mask) & (~priors.bone_mask) & (hu_slice >= 220.0)
+        pocket_casing = (dist_anc <= 30.0) & priors.body_mask & (~priors.lung_mask) & (~priors.bone_mask) & (hu_slice >= 220.0)
         num_c, lbls_c, stats_c, _ = cv2.connectedComponentsWithStats(pocket_casing.astype(np.uint8))
         for i in range(1, num_c):
             if stats_c[i, cv2.CC_STAT_AREA] >= 8:
                 port_mask |= (lbls_c == i)
                 has_port = True
+
+    # If this slice has no ChemoPort metal or casing, it cannot produce metal artifacts.
+    # Return empty contours immediately to prevent false positives on normal anatomy.
+    if not has_port:
+        stats = {
+            "metal_detected": False,
+            "metal_pixel_count": 0,
+            "artifact_pixel_count": 0,
+            "dark_streak_pixels": 0,
+            "bright_flare_pixels": 0,
+            "port_center": None,
+            "status": "Normal CT anatomy",
+        }
+        return empty_contours, stats, empty_masks
 
     # 3. Mediastinum Protection Zone (Heart and great vessels between lungs)
     med_zone = np.zeros((h, w), dtype=bool)
@@ -172,6 +188,7 @@ def detect_approach_a_slice_contours(
 
         # Forward polar transform (360 angles, max_polar_radius radius)
         polar = cv2.warpPolar(clean_hu, (max_polar_radius, 360), (px, py), max_polar_radius, cv2.WARP_POLAR_LINEAR)
+        polar = np.nan_to_num(polar, nan=-1000.0)
         pad = 20
         polar_padded = np.pad(polar, ((pad, pad), (0, 0)), mode="wrap")
         smooth = cv2.blur(polar_padded, (1, 21))[pad:-pad, :]
@@ -297,10 +314,12 @@ def detect_series_inspection_contours(
 
     total_slices = len(slices_list)
 
-    # Determine 3D ChemoPort spatial anchor if multi-slice
+    # Determine 3D ChemoPort spatial anchor and contiguous physical Z-range
     port_anchor = None
     best_idx = None
-    max_z_span = 18
+    z_min_active = 0
+    z_max_active = total_slices - 1
+
     if total_slices > 1:
         from modules.reconstruction import find_chemoport_slice_index
         best_idx = find_chemoport_slice_index(slices_list)
@@ -310,10 +329,39 @@ def detect_series_inspection_contours(
             ys, xs = np.where(m_best)
             port_anchor = (float(np.mean(ys)), float(np.mean(xs)))
 
+            # Contiguously trace the exact 3D physical body of the ChemoPort along the Z-axis
+            z_min_metal = best_idx
+            while z_min_metal > 0:
+                hu_prev = slices_list[z_min_metal - 1][1] if isinstance(slices_list[z_min_metal - 1], (tuple, list)) else slices_list[z_min_metal - 1]
+                m_prev = hu_prev >= 1800.0
+                if np.any(m_prev):
+                    ys_p, xs_p = np.where(m_prev)
+                    d = np.sqrt((ys_p - port_anchor[0]) ** 2 + (xs_p - port_anchor[1]) ** 2)
+                    if np.sum(d <= 45.0) >= 4:
+                        z_min_metal -= 1
+                        continue
+                break
+
+            z_max_metal = best_idx
+            while z_max_metal < total_slices - 1:
+                hu_next = slices_list[z_max_metal + 1][1] if isinstance(slices_list[z_max_metal + 1], (tuple, list)) else slices_list[z_max_metal + 1]
+                m_next = hu_next >= 1800.0
+                if np.any(m_next):
+                    ys_n, xs_n = np.where(m_next)
+                    d = np.sqrt((ys_n - port_anchor[0]) ** 2 + (xs_n - port_anchor[1]) ** 2)
+                    if np.sum(d <= 45.0) >= 4:
+                        z_max_metal += 1
+                        continue
+                break
+
+            # Allow at most 1 transition slice above and below for casing / catheter loop
+            z_min_active = max(0, z_min_metal - 1)
+            z_max_active = min(total_slices - 1, z_max_metal + 1)
+
     results = []
     for idx, sl in enumerate(slices_list):
-        # Slices far along the Z-axis from the ChemoPort anchor cannot contain the port
-        if best_idx is not None and abs(idx - best_idx) > max_z_span:
+        # Slices outside the 3D ChemoPort physical Z-span cannot contain the port or metal artifacts
+        if idx < z_min_active or idx > z_max_active:
             h, w = (sl[1] if isinstance(sl, (tuple, list)) else sl).shape
             empty_cnts = {"port": [], "artifact": [], "wire": [], "port_px": 0, "art_px": 0}
             empty_stats = {
@@ -333,9 +381,11 @@ def detect_series_inspection_contours(
             continue
 
         hu = sl[1] if isinstance(sl, (tuple, list)) else sl
+        is_trans = (idx == z_min_active or idx == z_max_active)
         cnts, stats, masks = detect_approach_a_slice_contours(
             hu,
             port_anchor=port_anchor,
+            is_transition_slice=is_trans,
         )
         results.append((cnts, stats, masks))
 
