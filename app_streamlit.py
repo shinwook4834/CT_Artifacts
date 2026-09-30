@@ -827,12 +827,73 @@ if workflow_mode == "1. Image Loading":
         if uploaded_files:
             upload_sig = tuple((f.name, f.size) for f in uploaded_files)
             if st.session_state.get("last_uploaded_files_sig") != upload_sig:
+                progress_placeholder = st.empty()
+                progress_bar = st.progress(0.0)
+
+                def update_load_progress(pct: int, title: str, subtitle: str):
+                    pct = max(0, min(100, int(pct)))
+                    rem_pct = 100 - pct
+                    progress_placeholder.markdown(
+                        f"""
+                        <div style="background: rgba(255, 255, 255, 0.88); backdrop-filter: blur(28px) saturate(180%); border: 1.5px solid rgba(13, 148, 136, 0.4); border-radius: 24px; padding: 20px 26px; max-width: 860px; margin: 18px auto 8px auto; box-shadow: 0 14px 40px -10px rgba(15, 118, 110, 0.15), inset 0 1px 1px #ffffff;">
+                          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <div style="display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.05rem; color: #0f172a;">
+                              <span style="display: inline-block; font-size: 1.3rem;">⏳</span>
+                              <span>{title}</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 10px; font-size: 0.92rem; font-weight: 800;">
+                              <span style="color: #0d9488; background: rgba(13, 148, 136, 0.1); padding: 5px 14px; border-radius: 9999px; letter-spacing: -0.2px;">
+                                {pct}% 완료
+                              </span>
+                              <span style="color: #cbd5e1;">|</span>
+                              <span style="color: #e11d48; background: rgba(244, 63, 94, 0.1); padding: 5px 14px; border-radius: 9999px; letter-spacing: -0.2px;">
+                                {rem_pct}% 남음
+                              </span>
+                            </div>
+                          </div>
+                          <div style="font-size: 0.86rem; color: #475569; font-weight: 600; line-height: 1.5;">
+                            {subtitle}
+                          </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                    progress_bar.progress(pct / 100.0)
+
                 clear_all_memory(reset_step=False)
                 gc.collect()
+
+                num_files = len(uploaded_files)
+                update_load_progress(2, "DICOM 데이터 세트 로드 시작", f"총 {num_files}개 파일 수신 및 메모리 할당 중... (98% 남음)")
+
                 slices = []
-                for f in uploaded_files:
-                    file_slices = parse_uploaded_file_cached(f.name, f.getvalue())
-                    slices.extend(file_slices)
+                for f_idx, f in enumerate(uploaded_files):
+                    f_name = f.name
+                    f_bytes = f.getvalue()
+                    if f_name.lower().endswith(".zip"):
+                        update_load_progress(
+                            15,
+                            "ZIP 아카이브 압축 해제 중...",
+                            f"압축 파일 '{f_name}'에서 DICOM 슬라이스 추출 중... (85% 남음)"
+                        )
+                        file_slices = parse_uploaded_file_cached(f_name, f_bytes)
+                        slices.extend(file_slices)
+                        update_load_progress(
+                            40,
+                            "ZIP 아카이브 파싱 완료",
+                            f"총 {len(file_slices)}개 CT DICOM 슬라이스 파싱 완료 (60% 남음)"
+                        )
+                    else:
+                        file_slices = parse_uploaded_file_cached(f_name, f_bytes)
+                        slices.extend(file_slices)
+                        p = int(2 + ((f_idx + 1) / num_files) * 38)
+                        step_interval = max(1, num_files // 25)
+                        if num_files <= 30 or (f_idx + 1) % step_interval == 0 or f_idx == num_files - 1:
+                            update_load_progress(
+                                p,
+                                "DICOM 슬라이스 파싱 중...",
+                                f"파일 파싱 진행: {f_idx + 1} / {num_files} ({100 - p}% 남음 • {f_name[:36]})"
+                            )
 
                 if slices:
                     # Group slices by SeriesInstanceUID to detect multi-series uploads
@@ -856,6 +917,8 @@ if workflow_mode == "1. Image Loading":
                     # If multiple distinct CT series detected in the upload
                     if len(series_map) > 1:
                         proceed_with_series = False
+                        progress_placeholder.empty()
+                        progress_bar.empty()
                         st.markdown(
                             f"""
                             <div style="background: rgba(254, 242, 242, 0.95); backdrop-filter: blur(20px); border: 1.5px solid rgba(220, 38, 38, 0.5); border-radius: 20px; padding: 20px 24px; max-width: 820px; margin: 18px auto; box-shadow: 0 8px 25px -5px rgba(220, 38, 38, 0.15);">
@@ -914,6 +977,12 @@ if workflow_mode == "1. Image Loading":
                                     st.rerun()
 
                     if proceed_with_series:
+                        total_slices = len(selected_slices)
+                        update_load_progress(
+                            44,
+                            "3D 해부학적 공간 정합 중...",
+                            f"총 {total_slices}개 슬라이스에서 ChemoPort 임플란트 3D 위치 탐색 중... (56% 남음)"
+                        )
                         st.session_state.scan_id = uuid.uuid4().hex
                         # Sort slices by InstanceNumber or SliceLocation
                         selected_slices.sort(key=lambda s: s[2].get("instance_number", 0))
@@ -932,6 +1001,12 @@ if workflow_mode == "1. Image Loading":
                             s_desc = selected_slices[0][2].get("series_description", "CT Series")
                             st.session_state.data_source_name = f"{s_desc} ({len(selected_slices)} DICOM Slices)"
 
+                        update_load_progress(
+                            52,
+                            "Approach A AI Artifact 윤곽 추출",
+                            f"ChemoPort 위치 감지 완료 (Slice {best_slice_idx + 1}/{total_slices}) • MAR 벡터 윤곽선 계산 중... (48% 남음)"
+                        )
+
                         # Pre-warm MAR reconstruction cache and encode client-side canvas slices (~1s for 236 slices)
                         st.session_state.recon_cache = {}
                         st.session_state.img_cache = {}
@@ -942,6 +1017,8 @@ if workflow_mode == "1. Image Loading":
                         all_recon_b64_list = []
                         contours_list = []
                         series_mar_results = process_series_slices_mar(selected_slices)
+
+                        slice_step = max(1, total_slices // 30)
                         for idx, sl in enumerate(selected_slices):
                             hu = sl[1]
                             recon_hu, stats, cnt_dict = series_mar_results[idx]
@@ -963,6 +1040,14 @@ if workflow_mode == "1. Image Loading":
                             all_orig_b64_list.append(base64.b64encode(b_oa).decode("ascii"))
                             all_recon_b64_list.append(base64.b64encode(b_ra).decode("ascii"))
 
+                            p = int(52 + ((idx + 1) / total_slices) * 46)
+                            if total_slices <= 25 or (idx + 1) % slice_step == 0 or idx == total_slices - 1:
+                                update_load_progress(
+                                    p,
+                                    "슬라이스 고속 캔버스 렌더링 최적화 중...",
+                                    f"슬라이스 인코딩 진행: {idx + 1} / {total_slices} ({100 - p}% 남음)"
+                                )
+
                         st.session_state.orig_b64_list = orig_b64_list
                         st.session_state.recon_b64_list = recon_b64_list
                         st.session_state.all_orig_b64_list = all_orig_b64_list
@@ -974,6 +1059,15 @@ if workflow_mode == "1. Image Loading":
                         st.session_state.recon_stats = initial_stats
                         st.session_state.last_uploaded_files_sig = upload_sig
                         st.session_state.current_workflow_step = "2. Artifact Inspection"
+
+                        update_load_progress(
+                            100,
+                            "✨ CT 볼륨 데이터 로드 완료",
+                            "모든 슬라이스 정합 및 최적화가 완료되었습니다. Artifact Inspection으로 이동합니다... (0% 남음)"
+                        )
+                        import time
+                        time.sleep(0.3)
+
                         del slices, orig_b64_list, recon_b64_list, all_orig_b64_list, all_recon_b64_list
                         gc.collect()
                         st.rerun()

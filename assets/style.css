@@ -401,6 +401,26 @@ html, body, [data-testid="stAppViewContainer"] {
   transform: scale(1.08) translateY(-2px) !important;
 }
 
+/* Fallback cloud upload icon if browser or Streamlit version lacks native SVG */
+[data-testid="stFileUploaderDropzone"]:not(:has(svg))::before,
+[data-testid="stFileUploaderDropzoneInstructions"]:not(:has(svg))::before {
+  content: "";
+  display: block;
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 6px auto;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230d9488' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242'/%3E%3Cpath d='M12 12v9'/%3E%3Cpath d='m16 16-4-4-4 4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  filter: drop-shadow(0 6px 14px rgba(13, 148, 136, 0.25));
+  transition: transform 0.2s ease;
+}
+
+[data-testid="stFileUploaderDropzone"]:not(:has(svg)):hover::before {
+  transform: scale(1.08) translateY(-2px);
+}
+
 /* Main 'Drag and drop file here' text */
 [data-testid="stFileUploaderDropzone"] span,
 [data-testid="stFileUploaderDropzoneInstructions"] span {
@@ -419,8 +439,8 @@ html, body, [data-testid="stAppViewContainer"] {
   margin-top: 4px !important;
 }
 
-/* QuillBot Primary Pill Button inside Dropzone */
-[data-testid="stFileUploaderDropzone"] button {
+/* QuillBot Primary Pill Button inside Dropzone (Excludes delete buttons) */
+[data-testid="stFileUploaderDropzone"] button:not([aria-label*="Remove"]):not([aria-label*="Delete"]):not([aria-label*="remove"]):not([aria-label*="delete"]) {
   background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%) !important;
   color: #ffffff !important;
   border-radius: 9999px !important;
@@ -435,7 +455,7 @@ html, body, [data-testid="stAppViewContainer"] {
   cursor: pointer !important;
 }
 
-[data-testid="stFileUploaderDropzone"] button:hover {
+[data-testid="stFileUploaderDropzone"] button:not([aria-label*="Remove"]):not([aria-label*="Delete"]):not([aria-label*="remove"]):not([aria-label*="delete"]):hover {
   background: linear-gradient(135deg, #0f766e 0%, #115e59 100%) !important;
   transform: translateY(-2px) scale(1.02) !important;
   box-shadow: 0 10px 28px rgba(13, 148, 136, 0.45) !important;
@@ -631,18 +651,66 @@ div[data-testid="stHorizontalBlock"]:has(#stepper-hidden-marker) {
   padding: 0 !important;
 }
 
-/* Completely hide uploaded file progress, file rows, chips, and upload process indicators */
+/* Completely hide uploaded file progress, file rows, chips, and delete buttons across ALL Streamlit versions */
 [data-testid="stFileUploaderFile"],
 [data-testid="stFileUploaderFileData"],
 [data-testid="stFileUploaderFileName"],
 [data-testid="stFileUploaderDeleteBtn"],
 [data-testid="stFileUploaderPagination"],
+[data-testid="stFileUploaderFiles"],
 [data-testid="stFileUploader"] ul,
+[data-testid="stFileUploader"] li,
 [data-testid="stFileUploader"] section:not([data-testid="stFileUploaderDropzone"]),
+[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"] + div,
+[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"] + ul,
+[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"] + section,
+[data-testid="stFileUploaderDropzone"] [data-testid="stFileUploaderDeleteBtn"],
+[data-testid="stFileUploaderDropzone"] [data-testid="stFileUploaderFile"],
+[data-testid="stFileUploaderDropzone"] [data-testid="stFileUploaderFileData"],
+[data-testid="stFileUploaderDropzone"] button[aria-label*="Remove"],
+[data-testid="stFileUploaderDropzone"] button[aria-label*="Delete"],
+[data-testid="stFileUploaderDropzone"] button[aria-label*="remove"],
+[data-testid="stFileUploaderDropzone"] button[aria-label*="delete"],
+[data-testid="stFileUploader"] button[aria-label*="Remove"],
+[data-testid="stFileUploader"] button[aria-label*="Delete"],
+[data-testid="stFileUploader"] button[aria-label*="remove"],
+[data-testid="stFileUploader"] button[aria-label*="delete"],
+.stFileUploaderFile,
+.stFileUploaderFileData,
+.stFileUploaderFileName,
 .stFileUploader [role="progressbar"],
 .stFileUploader [data-testid="stProgressBar"],
 .stFileUploader ul {
   display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  max-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  opacity: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Apple Liquid Glass Custom Progress Bar for Loading */
+[data-testid="stProgressBar"] {
+  max-width: 860px !important;
+  margin: 8px auto 0 auto !important;
+}
+[data-testid="stProgressBar"] > div {
+  background: rgba(226, 232, 240, 0.6) !important;
+  border-radius: 9999px !important;
+  height: 12px !important;
+  overflow: hidden !important;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+}
+[data-testid="stProgressBar"] > div > div {
+  background: linear-gradient(90deg, #0d9488 0%, #06b6d4 100%) !important;
+  border-radius: 9999px !important;
+  box-shadow: 0 0 14px rgba(13, 148, 136, 0.45) !important;
+  transition: width 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
 /* Ensure Stepper iframe & container are transparent with no angular/sharp box */
