@@ -37,7 +37,7 @@ jobs:
           api = HfApi(token=token)
           api.upload_folder(
               folder_path='.',
-              repo_id='shinwook4834/CT_Artifacts',
+              repo_id='shinwook4834/CTAF',
               repo_type='space',
               ignore_patterns=['.git*', '.github*', '*.pdf', '*.docx']
           )
