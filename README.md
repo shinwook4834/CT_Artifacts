@@ -1,12 +1,12 @@
 ---
-title: ChemoPort CT-MAR Studio
-emoji: 🩺
+title: CTAF Studio
+emoji: 🧬
 colorFrom: blue
-colorTo: green
+colorTo: indigo
 sdk: streamlit
+sdk_version: 1.28.0
 app_file: app_streamlit.py
 pinned: false
-license: mit
 ---
 
 # ChemoPort CT-MAR Studio 🩺⚡
