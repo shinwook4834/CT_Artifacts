@@ -4,7 +4,7 @@ emoji: 🧬
 colorFrom: blue
 colorTo: indigo
 sdk: streamlit
-sdk_version: 1.42.0
+sdk_version: 1.28.0
 app_file: app_streamlit.py
 pinned: false
 ---
