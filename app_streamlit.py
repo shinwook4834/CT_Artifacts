@@ -4,6 +4,7 @@ An Apple Liquid Glass-inspired open-science platform for 3D CAD Prior-guided
 Metal Artifact Reduction (MAR) and radiation dose integrity verification.
 """
 
+import gc
 import os
 import io
 import uuid
@@ -49,7 +50,10 @@ def render_custom_html(html_str: str, height: int = 500):
             return st.iframe(html_str, height=height)
         except Exception:
             pass
-@st.cache_data(show_spinner=False, max_entries=20)
+    return components.html(html_str, height=height)
+
+
+@st.cache_data(show_spinner=False, max_entries=2)
 def parse_uploaded_file_cached(file_name: str, file_bytes: bytes):
     """Caches in-memory DICOM parsing by file content hash to prevent redundant parsing."""
     if file_name.lower().endswith(".zip"):
@@ -61,7 +65,7 @@ def parse_uploaded_file_cached(file_name: str, file_bytes: bytes):
         return []
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=1)
 def load_default_demo_series():
     """Generates realistic clinical demo DICOM slices (slices 116..135) from repository artifacts."""
     import glob
@@ -400,6 +404,40 @@ def init_session_state():
         st.session_state.ai_engine_key = "ccaf_transformer"
     if "ai_engine_label" not in st.session_state:
         st.session_state.ai_engine_label = "💎 대측 해부학 교차 어텐션 AI (CCAF-Net Transformer) [추천]"
+    if "prev_selected_implant" not in st.session_state:
+        st.session_state.prev_selected_implant = "🩺 Chemo Port (Active)"
+
+
+def clear_all_memory(reset_step: bool = True):
+    """Deep garbage collection and session_state memory purge to keep RAM usage well below Streamlit Cloud limits."""
+    st.session_state.current_ds = None
+    st.session_state.current_hu = None
+    st.session_state.current_meta = None
+    st.session_state.recon_hu = None
+    st.session_state.recon_stats = None
+    st.session_state.data_source_name = "None"
+    st.session_state.slice_list = []
+    st.session_state.current_slice_idx = 0
+    st.session_state.recon_cache = {}
+    st.session_state.img_cache = {}
+    st.session_state.orig_b64_list = []
+    st.session_state.recon_b64_list = []
+    st.session_state.all_orig_b64_list = []
+    st.session_state.all_recon_b64_list = []
+    st.session_state.zip_cache = None
+    st.session_state.contours_cache = []
+    st.session_state.last_uploaded_files_sig = None
+    st.session_state.scan_id = uuid.uuid4().hex
+
+    try:
+        st.cache_data.clear()
+    except Exception:
+        pass
+
+    gc.collect()
+
+    if reset_step:
+        st.session_state.current_workflow_step = "1. Image Loading"
 
 
 init_session_state()
@@ -435,7 +473,43 @@ with st.sidebar:
         help="Select an implant-specific artifact reduction clinical workflow.",
     )
 
+    # Auto-cleanup on Module Navigation:
+    # If the user clicks another module in sidebar, purge all heavy CT memory immediately!
+    if "prev_selected_implant" not in st.session_state:
+        st.session_state.prev_selected_implant = selected_implant
+    elif st.session_state.prev_selected_implant != selected_implant:
+        st.session_state.prev_selected_implant = selected_implant
+        clear_all_memory(reset_step=True)
+        gc.collect()
+
     st.markdown("---")
+
+    # Resource Management & Memory Reset Card
+    has_data = st.session_state.get("current_hu") is not None
+    slice_count = len(st.session_state.get("slice_list", []))
+    status_label = f"CT Loaded ({slice_count} Slices)" if has_data else "RAM Clean (Idle)"
+    status_color = "#0d9488" if has_data else "#64748b"
+
+    st.markdown(
+        f"""
+        <div style="background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(16px); border: 1.5px solid rgba(255, 255, 255, 0.9); border-radius: 14px; padding: 12px 14px; font-size: 0.76rem; color: #475569; width: 100%; box-sizing: border-box; box-shadow: 0 3px 10px rgba(15, 23, 42, 0.03); margin-bottom: 10px;">
+          <div style="font-weight: 750; color: #0f172a; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+            <span style="display: flex; align-items: center; gap: 6px;">⚡ Resource Management</span>
+            <span style="color: {status_color}; font-weight: 700; font-size: 0.72rem;">{status_label}</span>
+          </div>
+          <div style="font-size: 0.71rem; color: #64748b; line-height: 1.4;">
+            Switching modules automatically wipes RAM. Click below to instantly purge memory.
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if st.button("🧹 Reset Memory & Workspace", key="btn_clear_ram", use_container_width=True, help="Clear all DICOM volumes, neural caches, base64 buffers, and force garbage collection"):
+        clear_all_memory(reset_step=True)
+        gc.collect()
+        st.toast("🧹 Workspace memory cleared!", icon="✅")
+        st.rerun()
 
     st.markdown("---")
 
@@ -827,6 +901,8 @@ if workflow_mode == "1. Image Loading":
             d_col1, d_col2, d_col3 = st.columns([1, 1.5, 1])
             with d_col2:
                 if st.button("⚡ Load Demo ChemoPort CT Scan (Instant)", use_container_width=True, type="secondary", help="Load pre-configured clinical thorax CT scan with ChemoPort implant (slices 116..135)"):
+                    clear_all_memory(reset_step=False)
+                    gc.collect()
                     demo_slices = load_default_demo_series()
                     st.session_state.slice_list = demo_slices
                     best_slice_idx = find_chemoport_slice_index(demo_slices)
@@ -856,6 +932,8 @@ if workflow_mode == "1. Image Loading":
         if uploaded_files:
             upload_sig = tuple((f.name, f.size) for f in uploaded_files)
             if st.session_state.get("last_uploaded_files_sig") != upload_sig:
+                clear_all_memory(reset_step=False)
+                gc.collect()
                 slices = []
                 for f in uploaded_files:
                     file_slices = parse_uploaded_file_cached(f.name, f.getvalue())
@@ -937,11 +1015,7 @@ if workflow_mode == "1. Image Loading":
                                     selected_slices = series_map[chosen_suid]["slices"]
                             with btn_col_b:
                                 if st.button("🔄 Cancel & Re-upload", use_container_width=True, help="Reset and upload a single series"):
-                                    st.session_state.last_uploaded_files_sig = None
-                                    st.session_state.current_hu = None
-                                    st.session_state.slice_list = []
-                                    st.session_state.recon_cache = {}
-                                    st.session_state.contours_cache = []
+                                    clear_all_memory(reset_step=True)
                                     st.rerun()
 
                     if proceed_with_series:
@@ -1005,6 +1079,8 @@ if workflow_mode == "1. Image Loading":
                         st.session_state.recon_stats = initial_stats
                         st.session_state.last_uploaded_files_sig = upload_sig
                         st.session_state.current_workflow_step = "2. Artifact Inspection"
+                        del slices, orig_b64_list, recon_b64_list, all_orig_b64_list, all_recon_b64_list
+                        gc.collect()
                         st.rerun()
     else:
         # If CT volume is already loaded
@@ -1057,15 +1133,7 @@ if workflow_mode == "1. Image Loading":
             st.button("← Back", key="nav_back_1", disabled=True, use_container_width=True)
         with reset_col:
             if st.button("🔄 Upload Different Scan", key="btn_reset_upload_step1", use_container_width=True, help="Clear loaded CT scan and upload a new patient series"):
-                st.session_state.current_hu = None
-                st.session_state.slice_list = []
-                st.session_state.orig_b64_list = []
-                st.session_state.all_orig_b64_list = []
-                st.session_state.recon_b64_list = []
-                st.session_state.all_recon_b64_list = []
-                st.session_state.recon_cache = {}
-                st.session_state.contours_cache = []
-                st.session_state.last_uploaded_files_sig = None
+                clear_all_memory(reset_step=True)
                 st.rerun()
         with next_col:
             if st.button("Next →", key="nav_next_1", type="primary", use_container_width=True, help="Proceed to 2. Artifact Inspection"):
@@ -3241,23 +3309,7 @@ if st.session_state.current_hu is not None:
                 st.rerun()
         with next_col:
             if st.button("🔄 New Scan", key="nav_next_4", type="primary", use_container_width=True, help="Reset workspace and upload new CT scan"):
-                st.session_state.current_ds = None
-                st.session_state.current_hu = None
-                st.session_state.current_meta = None
-                st.session_state.recon_hu = None
-                st.session_state.recon_stats = None
-                st.session_state.data_source_name = "None"
-                st.session_state.slice_list = []
-                st.session_state.current_slice_idx = 0
-                st.session_state.recon_cache = {}
-                st.session_state.img_cache = {}
-                st.session_state.zip_cache = None
-                st.session_state.orig_b64_list = []
-                st.session_state.recon_b64_list = []
-                st.session_state.all_orig_b64_list = []
-                st.session_state.all_recon_b64_list = []
-                st.session_state.scan_id = uuid.uuid4().hex
-                st.session_state.current_workflow_step = "1. Image Loading"
+                clear_all_memory(reset_step=True)
                 st.rerun()
 
 
