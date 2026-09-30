@@ -984,7 +984,7 @@ if st.session_state.current_hu is not None:
     # STEP 3: 3. AI Correction (Dual-View MAR Studio)
     if workflow_mode == "3. AI Correction":
         # Check pipeline version to invalidate stale cache across hot-reloads
-        CURRENT_PIPELINE_VER = "2026-09-30-v6-approach-a-inspection"
+        CURRENT_PIPELINE_VER = "2026-09-30-v7-enhanced-extent-s115-s135"
         if st.session_state.get("ai_pipeline_version") != CURRENT_PIPELINE_VER:
             st.session_state.ai_pipeline_version = CURRENT_PIPELINE_VER
             st.session_state.recon_cache = {}
@@ -2112,7 +2112,7 @@ if st.session_state.current_hu is not None:
         all_orig_json = json.dumps(st.session_state.all_orig_b64_list)
         scan_id = st.session_state.scan_id
 
-        INSPECTION_PIPELINE_VER = "2026-09-30-v6-approach-a-inspection"
+        INSPECTION_PIPELINE_VER = "2026-09-30-v7-enhanced-extent-s115-s135"
         if (
             "contours_cache" not in st.session_state
             or len(st.session_state.contours_cache) != total_slices

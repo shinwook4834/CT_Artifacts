@@ -1,11 +1,12 @@
 """Physics-Informed Anatomical Residual AI for Step 2 Artifact Inspection.
 
 Approach A (Physics-Informed Anatomical Residual AI):
-1. ChemoPort Titanium Core Segmentation:
-   - High attenuation HU threshold (>= 2000.0 HU)
+1. ChemoPort Titanium Core & Catheter Assembly Segmentation:
+   - Titanium core threshold (HU >= 1800.0 HU) and subcutaneous port casing/connector (HU >= 220.0 HU)
    - Anatomical anterior-lateral chest wall localization (Y < 0.62 * H)
    - 3D spatial continuity tracking across the scan to exclude dental fillings and pelvic clips
-   - Rose Red vector contour extraction for the port body and catheter
+   - Accurate 3D extent capturing the full cranio-caudal span (including top/bottom casing slices such as slices 115 and 135)
+   - Rose Red vector contour extraction for the port body, casing, and catheter
 2. Anatomical Prior Protection (Anti-False-Positive):
    - Strict exclusion of lung cavity (HU < -500)
    - Strict exclusion of cortical bone (ribs, sternum, clavicle)
@@ -29,13 +30,13 @@ def detect_approach_a_slice_contours(
     hu_slice: np.ndarray,
     pixel_spacing: Tuple[float, float] = (1.0, 1.0),
     port_anchor: Optional[Tuple[float, float]] = None,
-    max_anchor_dist_px: float = 65.0,
-    peri_zone_radius_px: float = 95.0,
-) -> Tuple[Dict[str, List], Dict[str, Any], Dict[str, np.ndarray]]:
+    max_anchor_dist_px: float = 60.0,
+    peri_zone_radius_px: float = 90.0,
+) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, np.ndarray]]:
     """Segments ChemoPort metal and radiating streak artifacts for a single 2D CT slice.
 
     Returns:
-        contours: {"port": [...], "artifact": [...], "wire": []}
+        contours: {"port": [...], "artifact": [...], "wire": [], "port_px": int, "art_px": int}
         stats: Dictionary of inspection metrics
         masks: {"port_mask": bool_array, "artifact_mask": bool_array}
     """
@@ -46,36 +47,41 @@ def detect_approach_a_slice_contours(
         "artifact_mask": np.zeros((h, w), dtype=bool),
     }
 
-    # Fast screening: if max HU is well below titanium metal, skip heavy extraction
-    if np.max(hu_slice) < 1800.0:
-        stats = {
-            "metal_detected": False,
-            "metal_pixel_count": 0,
-            "artifact_pixel_count": 0,
-            "dark_streak_pixels": 0,
-            "bright_flare_pixels": 0,
-            "port_center": None,
-            "status": "No metal detected (Normal CT anatomy)",
-        }
-        return empty_contours, stats, empty_masks
+    # Fast screening
+    if port_anchor is not None:
+        anchor_y, anchor_x = port_anchor
+        y_min, y_max = max(0, int(anchor_y - 75)), min(h, int(anchor_y + 75))
+        x_min, x_max = max(0, int(anchor_x - 75)), min(w, int(anchor_x + 75))
+        roi = hu_slice[y_min:y_max, x_min:x_max]
+        if not (np.any(roi >= 220.0) or np.any(roi < -140.0)):
+            stats = {
+                "metal_detected": False,
+                "metal_pixel_count": 0,
+                "artifact_pixel_count": 0,
+                "dark_streak_pixels": 0,
+                "bright_flare_pixels": 0,
+                "port_center": None,
+                "status": "No metal or artifact detected (Normal CT anatomy)",
+            }
+            return empty_contours, stats, empty_masks
+    else:
+        if np.max(hu_slice) < 1400.0:
+            stats = {
+                "metal_detected": False,
+                "metal_pixel_count": 0,
+                "artifact_pixel_count": 0,
+                "dark_streak_pixels": 0,
+                "bright_flare_pixels": 0,
+                "port_center": None,
+                "status": "No metal detected (Normal CT anatomy)",
+            }
+            return empty_contours, stats, empty_masks
 
     # 1. Extract Anatomical Landmark Priors
     priors = extract_anatomical_priors(hu_slice)
 
-    # 2. ChemoPort Titanium Core Detection
-    cand_metal = (hu_slice >= 2000.0) & priors.body_mask & (~priors.lung_mask)
-    if not np.any(cand_metal):
-        stats = {
-            "metal_detected": False,
-            "metal_pixel_count": 0,
-            "artifact_pixel_count": 0,
-            "dark_streak_pixels": 0,
-            "bright_flare_pixels": 0,
-            "port_center": None,
-            "status": "No metal detected (Normal CT anatomy)",
-        }
-        return empty_contours, stats, empty_masks
-
+    # 2. ChemoPort Titanium Core & Catheter Assembly Detection
+    cand_metal = (hu_slice >= 1800.0) & priors.body_mask & (~priors.lung_mask)
     num_l, labels, stats_l, centroids = cv2.connectedComponentsWithStats(cand_metal.astype(np.uint8))
     port_mask = np.zeros((h, w), dtype=bool)
     has_port = False
@@ -84,38 +90,32 @@ def detect_approach_a_slice_contours(
         cx, cy = centroids[i]
         area = stats_l[i, cv2.CC_STAT_AREA]
 
-        # Basic anatomical criteria: anterior-lateral chest wall
+        # Anterior chest wall constraint
         if cy >= 0.62 * h:
             continue
 
-        # If 3D anchor is provided, enforce spatial continuity within pectoral pocket
         if port_anchor is not None:
             anchor_y, anchor_x = port_anchor
             d_anchor = np.sqrt((cy - anchor_y) ** 2 + (cx - anchor_x) ** 2)
             if d_anchor > max_anchor_dist_px:
                 continue
 
-        # Size criterion: ChemoPort chamber or catheter segment
-        if area >= 10 or (area >= 4 and np.max(hu_slice[labels == i]) >= 3500.0):
+        if area >= 4:
             port_mask |= (labels == i)
             has_port = True
 
-    if not has_port:
-        stats = {
-            "metal_detected": False,
-            "metal_pixel_count": 0,
-            "artifact_pixel_count": 0,
-            "dark_streak_pixels": 0,
-            "bright_flare_pixels": 0,
-            "port_center": None,
-            "status": "No ChemoPort implant on this slice",
-        }
-        return empty_contours, stats, empty_masks
-
-    # Compute port centroid
-    port_ys, port_xs = np.where(port_mask)
-    port_center = (float(np.mean(port_ys)), float(np.mean(port_xs)))
-    port_pixel_count = int(np.sum(port_mask))
+    # If titanium core (>=1800 HU) is absent on this boundary slice,
+    # detect port casing / catheter assembly (HU >= 220 in the non-bone subcutaneous pectoral pocket)
+    if not has_port and port_anchor is not None:
+        anchor_y, anchor_x = port_anchor
+        Y, X = np.ogrid[:h, :w]
+        dist_anc = np.sqrt((Y - anchor_y) ** 2 + (X - anchor_x) ** 2)
+        pocket_casing = (dist_anc <= 35.0) & priors.body_mask & (~priors.lung_mask) & (~priors.bone_mask) & (hu_slice >= 220.0)
+        num_c, lbls_c, stats_c, _ = cv2.connectedComponentsWithStats(pocket_casing.astype(np.uint8))
+        for i in range(1, num_c):
+            if stats_c[i, cv2.CC_STAT_AREA] >= 8:
+                port_mask |= (lbls_c == i)
+                has_port = True
 
     # 3. Mediastinum Protection Zone (Heart and great vessels between lungs)
     med_zone = np.zeros((h, w), dtype=bool)
@@ -131,8 +131,23 @@ def detect_approach_a_slice_contours(
         med_zone &= priors.body_mask & (~priors.lung_mask) & (~priors.bone_mask)
 
     # 4. Peri-Port Influence Zone (Radial Corridor)
-    dist_port = distance_transform_edt(~port_mask)
-    peri_zone = (dist_port <= peri_zone_radius_px) & priors.body_mask & (~priors.lung_mask) & (~med_zone)
+    Y, X = np.ogrid[:h, :w]
+    if has_port and np.any(port_mask):
+        dist_zone = distance_transform_edt(~port_mask)
+        port_ys, port_xs = np.where(port_mask)
+        port_center = (float(np.mean(port_ys)), float(np.mean(port_xs)))
+        port_pixel_count = int(np.sum(port_mask))
+    elif port_anchor is not None:
+        anchor_y, anchor_x = port_anchor
+        dist_zone = np.sqrt((Y - anchor_y) ** 2 + (X - anchor_x) ** 2)
+        port_center = port_anchor
+        port_pixel_count = 0
+    else:
+        dist_zone = np.zeros((h, w), dtype=np.float32)
+        port_center = None
+        port_pixel_count = 0
+
+    peri_zone = (dist_zone <= peri_zone_radius_px) & priors.body_mask & (~priors.lung_mask) & (~med_zone)
     dist_skin = cv2.distanceTransform(priors.body_mask.astype(np.uint8), cv2.DIST_L2, 5)
 
     # 5. Physics-Informed Residual Anomaly Detection
@@ -143,7 +158,7 @@ def detect_approach_a_slice_contours(
 
     # 5B: Beam Hardening & Metal Scatter Bright Flares
     bright_flares = peri_zone & (~priors.bone_mask) & (~port_mask) & (
-        (hu_slice > 135.0) & (hu_slice < 2000.0)
+        (hu_slice > 135.0) & (hu_slice < 1800.0)
     )
 
     raw_artifact = (dark_shadows | bright_flares) & peri_zone & (~port_mask)
@@ -157,35 +172,50 @@ def detect_approach_a_slice_contours(
     # Strictly protect anatomical organs
     art_opened &= peri_zone & (~port_mask) & (~priors.lung_mask) & (~priors.bone_mask)
 
-    # Eliminate tiny isolated noise fragments (< 25 px)
+    # Eliminate tiny isolated noise fragments (< 20 px)
     num_a, labels_a, stats_a, _ = cv2.connectedComponentsWithStats(art_opened.astype(np.uint8))
     final_art = np.zeros_like(art_opened)
     for i in range(1, num_a):
-        if stats_a[i, cv2.CC_STAT_AREA] >= 25:
+        if stats_a[i, cv2.CC_STAT_AREA] >= 20:
             final_art |= (labels_a == i)
 
     artifact_pixel_count = int(np.sum(final_art))
     dark_count = int(np.sum(final_art & dark_shadows))
     bright_count = int(np.sum(final_art & bright_flares))
 
+    # If neither port nor artifacts exist on this slice, return empty
+    if not has_port and artifact_pixel_count == 0:
+        stats = {
+            "metal_detected": False,
+            "metal_pixel_count": 0,
+            "artifact_pixel_count": 0,
+            "dark_streak_pixels": 0,
+            "bright_flare_pixels": 0,
+            "port_center": None,
+            "status": "Normal CT anatomy",
+        }
+        return empty_contours, stats, empty_masks
+
     # 7. Extract Smooth Vector Polygon Contours
     # Port Contours (Rose Red)
     port_polys = []
-    cnts_p, _ = cv2.findContours(port_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    for c in cnts_p:
-        if cv2.contourArea(c) >= 4 or len(c) >= 3:
-            poly = cv2.approxPolyDP(c, epsilon=1.0, closed=True).reshape(-1, 2).tolist()
-            if len(poly) >= 3:
-                port_polys.append(poly)
+    if has_port and np.any(port_mask):
+        cnts_p, _ = cv2.findContours(port_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for c in cnts_p:
+            if cv2.contourArea(c) >= 4 or len(c) >= 3:
+                poly = cv2.approxPolyDP(c, epsilon=1.0, closed=True).reshape(-1, 2).tolist()
+                if len(poly) >= 3:
+                    port_polys.append(poly)
 
     # Artifact Contours (Amber Yellow)
     art_polys = []
-    cnts_a, _ = cv2.findContours(final_art.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    for c in cnts_a:
-        if cv2.contourArea(c) >= 12:
-            poly = cv2.approxPolyDP(c, epsilon=1.2, closed=True).reshape(-1, 2).tolist()
-            if len(poly) >= 3:
-                art_polys.append(poly)
+    if artifact_pixel_count > 0:
+        cnts_a, _ = cv2.findContours(final_art.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for c in cnts_a:
+            if cv2.contourArea(c) >= 12:
+                poly = cv2.approxPolyDP(c, epsilon=1.2, closed=True).reshape(-1, 2).tolist()
+                if len(poly) >= 3:
+                    art_polys.append(poly)
 
     contours = {
         "port": port_polys,
@@ -195,14 +225,21 @@ def detect_approach_a_slice_contours(
         "art_px": artifact_pixel_count,
     }
 
+    if has_port and artifact_pixel_count > 0:
+        status_msg = f"ChemoPort & Artifacts ({port_pixel_count} px port, {artifact_pixel_count} px artifact)"
+    elif has_port:
+        status_msg = f"ChemoPort Assembly ({port_pixel_count} px)"
+    else:
+        status_msg = f"Streak Artifacts ({artifact_pixel_count} px)"
+
     stats = {
-        "metal_detected": True,
+        "metal_detected": has_port,
         "metal_pixel_count": port_pixel_count,
         "artifact_pixel_count": artifact_pixel_count,
         "dark_streak_pixels": dark_count,
         "bright_flare_pixels": bright_count,
         "port_center": port_center,
-        "status": f"ChemoPort Detected ({port_pixel_count} px metal, {artifact_pixel_count} px artifact)",
+        "status": status_msg,
     }
 
     masks = {
@@ -215,7 +252,7 @@ def detect_approach_a_slice_contours(
 
 def detect_series_inspection_contours(
     slices_list: List[Any],
-) -> List[Tuple[Dict[str, List], Dict[str, Any], Dict[str, np.ndarray]]]:
+) -> List[Tuple[Dict[str, Any], Dict[str, Any], Dict[str, np.ndarray]]]:
     """Processes a full CT scan series to identify the 3D ChemoPort spatial anchor
     and generate consistent Approach A inspection contours for all slices."""
     if not slices_list:
@@ -226,7 +263,7 @@ def detect_series_inspection_contours(
     # Determine 3D ChemoPort spatial anchor if multi-slice
     port_anchor = None
     best_idx = None
-    max_z_span = 25
+    max_z_span = 18
     if total_slices > 1:
         from modules.reconstruction import find_chemoport_slice_index
         best_idx = find_chemoport_slice_index(slices_list)
@@ -266,4 +303,3 @@ def detect_series_inspection_contours(
         results.append((cnts, stats, masks))
 
     return results
-
