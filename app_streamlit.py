@@ -49,7 +49,101 @@ def render_custom_html(html_str: str, height: int = 500):
             return st.iframe(html_str, height=height)
         except Exception:
             pass
-    return components.html(html_str, height=height)
+@st.cache_data(show_spinner=False, max_entries=20)
+def parse_uploaded_file_cached(file_name: str, file_bytes: bytes):
+    """Caches in-memory DICOM parsing by file content hash to prevent redundant parsing."""
+    if file_name.lower().endswith(".zip"):
+        return load_dicom_from_zip(file_bytes)
+    try:
+        ds, hu_arr, meta = load_dicom_file(file_bytes)
+        return [(ds, hu_arr, meta)]
+    except Exception:
+        return []
+
+
+@st.cache_data(show_spinner=False)
+def load_default_demo_series():
+    """Generates realistic clinical demo DICOM slices (slices 116..135) from repository artifacts."""
+    import glob
+    from pydicom.dataset import Dataset, FileMetaDataset
+    from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+    series = []
+    png_files = sorted(glob.glob(os.path.join(os.path.dirname(__file__), "full_slice_z*.png")))
+    if not png_files:
+        png_files = sorted(glob.glob("full_slice_z*.png"))
+
+    if not png_files:
+        h, w = 512, 512
+        for z in range(116, 136):
+            hu = np.full((h, w), -1000.0, dtype=np.float32)
+            Y, X = np.ogrid[:h, :w]
+            body = ((Y - 256) ** 2 / 180**2 + (X - 256) ** 2 / 210**2) <= 1.0
+            hu[body] = -40.0
+            lung_l = ((Y - 260) ** 2 / 100**2 + (X - 180) ** 2 / 60**2) <= 1.0
+            lung_r = ((Y - 260) ** 2 / 100**2 + (X - 332) ** 2 / 60**2) <= 1.0
+            hu[lung_l | lung_r] = -750.0
+            if 120 <= z <= 130:
+                port = np.sqrt((Y - 188) ** 2 + (X - 328) ** 2) <= 12.0
+                hu[port] = 2850.0
+            ds = Dataset()
+            meta = {
+                "patient_id": "DEMO_PATIENT",
+                "patient_name": "ANON^CHEMOPORT",
+                "series_description": "Synthetic CT Simulation",
+                "instance_number": z,
+                "slice_thickness": "2.5 mm",
+                "pixel_spacing": "0.977 x 0.977 mm",
+                "dimensions": "512 x 512",
+                "metal_pixel_count": int(np.sum(hu >= 2000.0)),
+                "min_hu": float(np.min(hu)),
+                "max_hu": float(np.max(hu)),
+            }
+            series.append((ds, hu, meta))
+        return series
+
+    for i, pf in enumerate(png_files):
+        img_gray = cv2.imread(pf, cv2.IMREAD_GRAYSCALE)
+        if img_gray is None:
+            continue
+        hu = (img_gray.astype(np.float32) / 255.0) * 350.0 - 135.0
+        Y, X = np.ogrid[:512, :512]
+        port_core = np.sqrt((Y - 188)**2 + (X - 328)**2) <= 12.0
+        hu[port_core] = 2850.0
+
+        ds = Dataset()
+        ds.is_little_endian = True
+        ds.is_implicit_VR = False
+        file_meta = FileMetaDataset()
+        file_meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.2"
+        file_meta.MediaStorageSOPInstanceUID = generate_uid()
+        file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+        ds.file_meta = file_meta
+        ds.PatientName = "DEMO^CHEMOPORT"
+        ds.PatientID = "CT_DEMO_01"
+        ds.Modality = "CT"
+        ds.SeriesDescription = "Thorax Simulation CT"
+        ds.InstanceNumber = 116 + i * 4
+        ds.Rows, ds.Columns = 512, 512
+        ds.SamplesPerPixel = 1
+        ds.PhotometricInterpretation = "MONOCHROME2"
+        ds.PixelSpacing = ["0.9765625", "0.9765625"]
+        ds.SliceThickness = "2.5"
+        meta = {
+            "patient_id": "CT_DEMO_01",
+            "patient_name": "DEMO^CHEMOPORT",
+            "series_description": "Thorax Simulation CT",
+            "instance_number": 116 + i * 4,
+            "slice_thickness": "2.5 mm",
+            "pixel_spacing": "0.977 x 0.977 mm",
+            "dimensions": "512 x 512",
+            "metal_pixel_count": int(np.sum(hu >= 2000.0)),
+            "min_hu": float(np.min(hu)),
+            "max_hu": float(np.max(hu)),
+        }
+        series.append((ds, hu, meta))
+    return series
+
+
 
 
 
@@ -59,6 +153,24 @@ def process_series_slices_mar(slices_list, streak_reduction_strength: Optional[f
     are extracted for Step 2 Artifact Inspection."""
     if not slices_list:
         return []
+
+    # Fast return if contours are already cached in session_state
+    cached_contours = getattr(st.session_state, "contours_cache", None)
+    if cached_contours and len(cached_contours) == len(slices_list):
+        results = []
+        for idx, sl in enumerate(slices_list):
+            hu = sl[1] if isinstance(sl, (tuple, list)) else sl
+            recon_hu = hu.copy()
+            cnts = cached_contours[idx]
+            stats = {
+                "metal_detected": bool(cnts.get("port")),
+                "metal_pixel_count": cnts.get("port_px", 0),
+                "artifact_pixel_count": cnts.get("art_px", 0),
+                "streak_suppression_pct": 0.0,
+                "status": "ChemoPort & Artifacts" if cnts.get("port") else "Normal CT Anatomy",
+            }
+            results.append((recon_hu, stats, cnts))
+        return results
 
     from modules.artifact_inspection import detect_series_inspection_contours
     inspection_results = detect_series_inspection_contours(slices_list)
@@ -711,168 +823,189 @@ if workflow_mode == "1. Image Loading":
             )
 
         if not uploaded_files:
-            st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align: center; margin: 18px 0 14px 0; color: #64748b; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.5px;'>— OR TEST INSTANTLY WITH CLINICAL DEMO SCAN —</div>", unsafe_allow_html=True)
+            d_col1, d_col2, d_col3 = st.columns([1, 1.5, 1])
+            with d_col2:
+                if st.button("⚡ Load Demo ChemoPort CT Scan (Instant)", use_container_width=True, type="secondary", help="Load pre-configured clinical thorax CT scan with ChemoPort implant (slices 116..135)"):
+                    demo_slices = load_default_demo_series()
+                    st.session_state.slice_list = demo_slices
+                    best_slice_idx = find_chemoport_slice_index(demo_slices)
+                    st.session_state.current_slice_idx = best_slice_idx
+                    st.session_state.current_ds = demo_slices[best_slice_idx][0]
+                    st.session_state.current_hu = demo_slices[best_slice_idx][1]
+                    st.session_state.current_meta = demo_slices[best_slice_idx][2]
+                    st.session_state.data_source_name = f"Thorax ChemoPort Demo Scan ({len(demo_slices)} Slices)"
+                    st.session_state.recon_cache = {}
+                    st.session_state.orig_b64_list = []
+                    st.session_state.all_orig_b64_list = []
+                    st.session_state.recon_b64_list = []
+                    st.session_state.all_recon_b64_list = []
+                    st.session_state.contours_cache = []
+                    st.session_state.last_uploaded_files_sig = "DEMO_SCAN"
+                    st.session_state.current_workflow_step = "2. Artifact Inspection"
+                    st.rerun()
+
+            st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
             _, back_col, next_col, _ = st.columns([1.7, 0.8, 0.8, 1.7])
             with back_col:
                 st.button("← Back", key="nav_back_1_empty", disabled=True, use_container_width=True)
             with next_col:
-                st.button("Next →", key="nav_next_1_empty", disabled=True, use_container_width=True, help="Please upload a CT scan first")
+                st.button("Next →", key="nav_next_1_empty", disabled=True, use_container_width=True, help="Please upload a CT scan or click the Demo Scan button first")
 
-        # Process Data Loading from File Upload
+        # Process Data Loading from File Upload (Protected by Upload Signature Cache)
         if uploaded_files:
-            slices = []
-            for f in uploaded_files:
-                file_bytes = f.getvalue()
-                if f.name.lower().endswith(".zip"):
-                    zip_slices = load_dicom_from_zip(file_bytes)
-                    slices.extend(zip_slices)
-                else:
-                    try:
-                        ds, hu_arr, meta = load_dicom_file(file_bytes)
-                        slices.append((ds, hu_arr, meta))
-                    except Exception:
-                        pass
+            upload_sig = tuple((f.name, f.size) for f in uploaded_files)
+            if st.session_state.get("last_uploaded_files_sig") != upload_sig:
+                slices = []
+                for f in uploaded_files:
+                    file_slices = parse_uploaded_file_cached(f.name, f.getvalue())
+                    slices.extend(file_slices)
 
-            if slices:
-                # Group slices by SeriesInstanceUID to detect multi-series uploads
-                series_map = {}
-                for sl in slices:
-                    ds_i, hu_i, meta_i = sl
-                    suid = meta_i.get("series_instance_uid", getattr(ds_i, "SeriesInstanceUID", "UNKNOWN"))
-                    if suid not in series_map:
-                        desc = meta_i.get("series_description", getattr(ds_i, "SeriesDescription", "CT Series"))
-                        snum = meta_i.get("series_number", getattr(ds_i, "SeriesNumber", "1"))
-                        series_map[suid] = {
-                            "description": desc,
-                            "series_number": snum,
-                            "slices": [],
-                        }
-                    series_map[suid]["slices"].append(sl)
+                if slices:
+                    # Group slices by SeriesInstanceUID to detect multi-series uploads
+                    series_map = {}
+                    for sl in slices:
+                        ds_i, hu_i, meta_i = sl
+                        suid = meta_i.get("series_instance_uid", getattr(ds_i, "SeriesInstanceUID", "UNKNOWN"))
+                        if suid not in series_map:
+                            desc = meta_i.get("series_description", getattr(ds_i, "SeriesDescription", "CT Series"))
+                            snum = meta_i.get("series_number", getattr(ds_i, "SeriesNumber", "1"))
+                            series_map[suid] = {
+                                "description": desc,
+                                "series_number": snum,
+                                "slices": [],
+                            }
+                        series_map[suid]["slices"].append(sl)
 
-                proceed_with_series = True
-                selected_slices = slices
+                    proceed_with_series = True
+                    selected_slices = slices
 
-                # If multiple distinct CT series detected in the upload
-                if len(series_map) > 1:
-                    proceed_with_series = False
-                    st.markdown(
-                        f"""
-                        <div style="background: rgba(254, 242, 242, 0.95); backdrop-filter: blur(20px); border: 1.5px solid rgba(220, 38, 38, 0.5); border-radius: 20px; padding: 20px 24px; max-width: 820px; margin: 18px auto; box-shadow: 0 8px 25px -5px rgba(220, 38, 38, 0.15);">
-                          <div style="display: flex; align-items: center; gap: 10px; color: #991b1b; font-weight: 800; font-size: 1.08rem;">
-                            <span style="font-size: 1.35rem;">⛔</span>
-                            <span>Error: Multiple CT Series Detected ({len(series_map)} Series Found)</span>
-                          </div>
-                          <div style="font-size: 0.88rem; color: #7f1d1d; margin-top: 8px; line-height: 1.55;">
-                            Only <b>ONE CT series</b> can be uploaded per session to ensure accurate 3D CAD registration and radiation therapy planning integrity.
-                            Please select a single target series below to isolate and proceed, or cancel to re-upload a single series.
-                          </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-                    # Auto-detect series with metal/ChemoPort implant
-                    best_suid = None
-                    max_metal = -1
-                    for suid, sinfo in series_map.items():
-                        total_metal = sum(s[2].get("metal_pixel_count", 0) for s in sinfo["slices"])
-                        if total_metal > max_metal:
-                            max_metal = total_metal
-                            best_suid = suid
-
-                    series_keys = list(series_map.keys())
-
-                    def format_series_option(uid):
-                        info = series_map[uid]
-                        desc = info["description"]
-                        count = len(info["slices"])
-                        has_metal = any(s[2].get("metal_pixel_count", 0) > 0 for s in info["slices"])
-                        metal_tag = " 🩺 [ChemoPort Implant Detected]" if has_metal else ""
-                        return f"Series {info['series_number']}: {desc} ({count} slices){metal_tag}"
-
-                    default_idx = series_keys.index(best_suid) if best_suid in series_keys else 0
-
-                    w_col_l, w_col_mid, w_col_r = st.columns([0.6, 6.8, 0.6])
-                    with w_col_mid:
-                        chosen_suid = st.selectbox(
-                            "Select Single Series to Process:",
-                            series_keys,
-                            index=default_idx,
-                            format_func=format_series_option,
-                            key="multi_series_select_box",
+                    # If multiple distinct CT series detected in the upload
+                    if len(series_map) > 1:
+                        proceed_with_series = False
+                        st.markdown(
+                            f"""
+                            <div style="background: rgba(254, 242, 242, 0.95); backdrop-filter: blur(20px); border: 1.5px solid rgba(220, 38, 38, 0.5); border-radius: 20px; padding: 20px 24px; max-width: 820px; margin: 18px auto; box-shadow: 0 8px 25px -5px rgba(220, 38, 38, 0.15);">
+                              <div style="display: flex; align-items: center; gap: 10px; color: #991b1b; font-weight: 800; font-size: 1.08rem;">
+                                <span style="font-size: 1.35rem;">⛔</span>
+                                <span>Error: Multiple CT Series Detected ({len(series_map)} Series Found)</span>
+                              </div>
+                              <div style="font-size: 0.88rem; color: #7f1d1d; margin-top: 8px; line-height: 1.55;">
+                                Only <b>ONE CT series</b> can be uploaded per session to ensure accurate 3D CAD registration and radiation therapy planning integrity.
+                                Please select a single target series below to isolate and proceed, or cancel to re-upload a single series.
+                              </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
                         )
-                        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-                        btn_col_a, btn_col_b = st.columns([1, 1])
-                        with btn_col_a:
-                            if st.button("▶️ Proceed with Selected Series", type="primary", use_container_width=True, help="Isolate and process this single CT series"):
-                                proceed_with_series = True
-                                selected_slices = series_map[chosen_suid]["slices"]
-                        with btn_col_b:
-                            if st.button("🔄 Cancel & Re-upload", use_container_width=True, help="Reset and upload a single series"):
-                                st.session_state.current_hu = None
-                                st.rerun()
 
-                if proceed_with_series:
-                    st.session_state.scan_id = uuid.uuid4().hex
-                    # Sort slices by InstanceNumber or SliceLocation
-                    selected_slices.sort(key=lambda s: s[2].get("instance_number", 0))
-                    st.session_state.slice_list = selected_slices
+                        # Auto-detect series with metal/ChemoPort implant
+                        best_suid = None
+                        max_metal = -1
+                        for suid, sinfo in series_map.items():
+                            total_metal = sum(s[2].get("metal_pixel_count", 0) for s in sinfo["slices"])
+                            if total_metal > max_metal:
+                                max_metal = total_metal
+                                best_suid = suid
 
-                    # Automatically locate ChemoPort slice using anterior chest wall & HU criteria
-                    best_slice_idx = find_chemoport_slice_index(selected_slices)
+                        series_keys = list(series_map.keys())
 
-                    st.session_state.current_slice_idx = best_slice_idx
-                    st.session_state.current_ds = selected_slices[best_slice_idx][0]
-                    st.session_state.current_hu = selected_slices[best_slice_idx][1]
-                    st.session_state.current_meta = selected_slices[best_slice_idx][2]
-                    if len(selected_slices) == 1:
-                        st.session_state.data_source_name = getattr(selected_slices[0][0], "SeriesDescription", "Single DICOM Slice")
-                    else:
-                        s_desc = selected_slices[0][2].get("series_description", "CT Series")
-                        st.session_state.data_source_name = f"{s_desc} ({len(selected_slices)} DICOM Slices)"
+                        def format_series_option(uid):
+                            info = series_map[uid]
+                            desc = info["description"]
+                            count = len(info["slices"])
+                            has_metal = any(s[2].get("metal_pixel_count", 0) > 0 for s in info["slices"])
+                            metal_tag = " 🩺 [ChemoPort Implant Detected]" if has_metal else ""
+                            return f"Series {info['series_number']}: {desc} ({count} slices){metal_tag}"
 
-                    # Pre-warm MAR reconstruction cache and encode client-side canvas slices (~1s for 236 slices)
-                    st.session_state.recon_cache = {}
-                    st.session_state.img_cache = {}
-                    st.session_state.contours_cache = []
-                    orig_b64_list = []
-                    recon_b64_list = []
-                    all_orig_b64_list = []
-                    all_recon_b64_list = []
-                    contours_list = []
-                    series_mar_results = process_series_slices_mar(selected_slices)
-                    for idx, sl in enumerate(selected_slices):
-                        hu = sl[1]
-                        recon_hu, stats, cnt_dict = series_mar_results[idx]
-                        contours_list.append(cnt_dict)
+                        default_idx = series_keys.index(best_suid) if best_suid in series_keys else 0
 
-                        st.session_state.recon_cache[idx] = (recon_hu, stats)
-                        img_o = apply_window_level(hu, wc=40.0, ww=350.0)
-                        img_r = apply_window_level(recon_hu, wc=40.0, ww=350.0)
-                        img_o_all = apply_window_level(hu, wc=10760.0, ww=33530.0)
-                        img_r_all = apply_window_level(recon_hu, wc=10760.0, ww=33530.0)
-                        st.session_state.img_cache[idx] = (img_o, img_r)
+                        w_col_l, w_col_mid, w_col_r = st.columns([0.6, 6.8, 0.6])
+                        with w_col_mid:
+                            chosen_suid = st.selectbox(
+                                "Select Single Series to Process:",
+                                series_keys,
+                                index=default_idx,
+                                format_func=format_series_option,
+                                key="multi_series_select_box",
+                            )
+                            st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+                            btn_col_a, btn_col_b = st.columns([1, 1])
+                            with btn_col_a:
+                                if st.button("▶️ Proceed with Selected Series", type="primary", use_container_width=True, help="Isolate and process this single CT series"):
+                                    proceed_with_series = True
+                                    selected_slices = series_map[chosen_suid]["slices"]
+                            with btn_col_b:
+                                if st.button("🔄 Cancel & Re-upload", use_container_width=True, help="Reset and upload a single series"):
+                                    st.session_state.last_uploaded_files_sig = None
+                                    st.session_state.current_hu = None
+                                    st.session_state.slice_list = []
+                                    st.session_state.recon_cache = {}
+                                    st.session_state.contours_cache = []
+                                    st.rerun()
 
-                        _, b_o = cv2.imencode(".jpg", img_o, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                        _, b_r = cv2.imencode(".jpg", img_r, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                        _, b_oa = cv2.imencode(".jpg", img_o_all, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                        _, b_ra = cv2.imencode(".jpg", img_r_all, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                        orig_b64_list.append(base64.b64encode(b_o).decode("ascii"))
-                        recon_b64_list.append(base64.b64encode(b_r).decode("ascii"))
-                        all_orig_b64_list.append(base64.b64encode(b_oa).decode("ascii"))
-                        all_recon_b64_list.append(base64.b64encode(b_ra).decode("ascii"))
+                    if proceed_with_series:
+                        st.session_state.scan_id = uuid.uuid4().hex
+                        # Sort slices by InstanceNumber or SliceLocation
+                        selected_slices.sort(key=lambda s: s[2].get("instance_number", 0))
+                        st.session_state.slice_list = selected_slices
 
-                    st.session_state.orig_b64_list = orig_b64_list
-                    st.session_state.recon_b64_list = recon_b64_list
-                    st.session_state.all_orig_b64_list = all_orig_b64_list
-                    st.session_state.all_recon_b64_list = all_recon_b64_list
-                    st.session_state.contours_cache = contours_list
+                        # Automatically locate ChemoPort slice using anterior chest wall & HU criteria
+                        best_slice_idx = find_chemoport_slice_index(selected_slices)
 
-                    initial_recon, initial_stats = st.session_state.recon_cache[best_slice_idx]
-                    st.session_state.recon_hu = initial_recon
-                    st.session_state.recon_stats = initial_stats
-                    st.session_state.current_workflow_step = "2. Artifact Inspection"
-                    st.rerun()
+                        st.session_state.current_slice_idx = best_slice_idx
+                        st.session_state.current_ds = selected_slices[best_slice_idx][0]
+                        st.session_state.current_hu = selected_slices[best_slice_idx][1]
+                        st.session_state.current_meta = selected_slices[best_slice_idx][2]
+                        if len(selected_slices) == 1:
+                            st.session_state.data_source_name = getattr(selected_slices[0][0], "SeriesDescription", "Single DICOM Slice")
+                        else:
+                            s_desc = selected_slices[0][2].get("series_description", "CT Series")
+                            st.session_state.data_source_name = f"{s_desc} ({len(selected_slices)} DICOM Slices)"
+
+                        # Pre-warm MAR reconstruction cache and encode client-side canvas slices (~1s for 236 slices)
+                        st.session_state.recon_cache = {}
+                        st.session_state.img_cache = {}
+                        st.session_state.contours_cache = []
+                        orig_b64_list = []
+                        recon_b64_list = []
+                        all_orig_b64_list = []
+                        all_recon_b64_list = []
+                        contours_list = []
+                        series_mar_results = process_series_slices_mar(selected_slices)
+                        for idx, sl in enumerate(selected_slices):
+                            hu = sl[1]
+                            recon_hu, stats, cnt_dict = series_mar_results[idx]
+                            contours_list.append(cnt_dict)
+
+                            st.session_state.recon_cache[idx] = (recon_hu, stats)
+                            img_o = apply_window_level(hu, wc=40.0, ww=350.0)
+                            img_r = apply_window_level(recon_hu, wc=40.0, ww=350.0)
+                            img_o_all = apply_window_level(hu, wc=10760.0, ww=33530.0)
+                            img_r_all = apply_window_level(recon_hu, wc=10760.0, ww=33530.0)
+                            st.session_state.img_cache[idx] = (img_o, img_r)
+
+                            _, b_o = cv2.imencode(".jpg", img_o, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                            _, b_r = cv2.imencode(".jpg", img_r, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                            _, b_oa = cv2.imencode(".jpg", img_o_all, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                            _, b_ra = cv2.imencode(".jpg", img_r_all, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                            orig_b64_list.append(base64.b64encode(b_o).decode("ascii"))
+                            recon_b64_list.append(base64.b64encode(b_r).decode("ascii"))
+                            all_orig_b64_list.append(base64.b64encode(b_oa).decode("ascii"))
+                            all_recon_b64_list.append(base64.b64encode(b_ra).decode("ascii"))
+
+                        st.session_state.orig_b64_list = orig_b64_list
+                        st.session_state.recon_b64_list = recon_b64_list
+                        st.session_state.all_orig_b64_list = all_orig_b64_list
+                        st.session_state.all_recon_b64_list = all_recon_b64_list
+                        st.session_state.contours_cache = contours_list
+
+                        initial_recon, initial_stats = st.session_state.recon_cache[best_slice_idx]
+                        st.session_state.recon_hu = initial_recon
+                        st.session_state.recon_stats = initial_stats
+                        st.session_state.last_uploaded_files_sig = upload_sig
+                        st.session_state.current_workflow_step = "2. Artifact Inspection"
+                        st.rerun()
     else:
         # If CT volume is already loaded
         total_slices = len(st.session_state.slice_list) if st.session_state.slice_list else 1
@@ -919,9 +1052,21 @@ if workflow_mode == "1. Image Loading":
         )
 
         st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
-        _, back_col, next_col, _ = st.columns([1.7, 0.8, 0.8, 1.7])
+        _, back_col, reset_col, next_col, _ = st.columns([1.2, 0.8, 1.2, 0.8, 1.2])
         with back_col:
             st.button("← Back", key="nav_back_1", disabled=True, use_container_width=True)
+        with reset_col:
+            if st.button("🔄 Upload Different Scan", key="btn_reset_upload_step1", use_container_width=True, help="Clear loaded CT scan and upload a new patient series"):
+                st.session_state.current_hu = None
+                st.session_state.slice_list = []
+                st.session_state.orig_b64_list = []
+                st.session_state.all_orig_b64_list = []
+                st.session_state.recon_b64_list = []
+                st.session_state.all_recon_b64_list = []
+                st.session_state.recon_cache = {}
+                st.session_state.contours_cache = []
+                st.session_state.last_uploaded_files_sig = None
+                st.rerun()
         with next_col:
             if st.button("Next →", key="nav_next_1", type="primary", use_container_width=True, help="Proceed to 2. Artifact Inspection"):
                 st.session_state.scan_id = uuid.uuid4().hex
