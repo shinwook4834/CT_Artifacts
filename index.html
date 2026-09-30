@@ -308,29 +308,28 @@
         </div>
       </div>
 
+      <!-- Sleek Control Toolbar above Canvas (Zero Collision) -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; max-width: 512px; margin-left: auto; margin-right: auto; gap: 8px;">
+        <div style="display: flex; gap: 5px; align-items: center;">
+          <span class="hud-badge badge-wl-display" style="background: #0f172a; color: #f8fafc; font-size: 0.74rem;">WL: 40 / WW: 350</span>
+          <button class="hud-btn preset-soft active" style="font-size: 0.74rem;">Soft</button>
+          <button class="hud-btn preset-bone" style="font-size: 0.74rem;">Bone</button>
+          <button class="hud-btn preset-lung" style="font-size: 0.74rem;">Lung</button>
+          <button class="hud-btn preset-metal" style="font-size: 0.74rem;">Metal</button>
+        </div>
+        <div style="display: flex; gap: 5px; align-items: center;">
+          <button id="btn-toggle-port" class="hud-btn active" style="font-size: 0.74rem;">ChemoPort</button>
+          <button id="btn-toggle-art" class="hud-btn active" style="font-size: 0.74rem;">Artifacts</button>
+          <button class="hud-btn btn-reset-zoom" style="font-size: 0.74rem;">↺ Reset</button>
+        </div>
+      </div>
+
       <!-- Canvas Viewport with Overlays -->
       <div class="canvas-wrapper">
         <!-- WebGL 16-bit CT Slice Viewport -->
         <canvas id="canvas-viewport"></canvas>
         <!-- 2D Vector Overlay for Contours -->
         <canvas id="canvas-overlay" width="512" height="512" class="canvas-overlay-pos"></canvas>
-
-        <!-- Top-Left HUD (Window / Level) -->
-        <div class="hud-overlay hud-left">
-          <span class="hud-badge badge-wl-display">WL: 40 / WW: 350</span>
-          <button class="hud-btn preset-soft active">Soft</button>
-          <button class="hud-btn preset-bone">Bone</button>
-          <button class="hud-btn preset-lung">Lung</button>
-          <button class="hud-btn preset-metal">Metal</button>
-          <button class="hud-btn preset-all">All HU</button>
-        </div>
-
-        <!-- Top-Right HUD (Contour Toggles) -->
-        <div class="hud-overlay hud-right">
-          <button id="btn-toggle-port" class="hud-btn active">ChemoPort</button>
-          <button id="btn-toggle-art" class="hud-btn active">Artifacts</button>
-          <button class="hud-btn btn-reset-zoom">↺ Reset</button>
-        </div>
       </div>
 
       <!-- Slice navigation slider -->
@@ -363,26 +362,25 @@
         <button id="btn-run-ai" class="btn-primary" style="padding: 6px 18px; font-size: 0.85rem;">▶️ Run AI Restoration</button>
       </div>
 
+      <!-- Sleek Control Toolbar above Canvas (Zero Collision) -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; max-width: 512px; margin-left: auto; margin-right: auto; gap: 8px;">
+        <div style="display: flex; gap: 5px; align-items: center;">
+          <span class="hud-badge badge-wl-display" style="background: #0f172a; color: #f8fafc; font-size: 0.74rem;">WL: 40 / WW: 350</span>
+          <button class="hud-btn preset-soft active" style="font-size: 0.74rem;">Soft</button>
+          <button class="hud-btn preset-bone" style="font-size: 0.74rem;">Bone</button>
+          <button class="hud-btn preset-lung" style="font-size: 0.74rem;">Lung</button>
+        </div>
+        <div style="display: flex; gap: 5px; align-items: center;">
+          <button id="btn-toggle-glass" class="hud-btn active" style="font-size: 0.74rem;">Glass</button>
+          <button class="hud-btn btn-glass-size" data-size="80" style="font-size: 0.74rem;">S</button>
+          <button class="hud-btn btn-glass-size active" data-size="160" style="font-size: 0.74rem;">M</button>
+          <button class="hud-btn btn-glass-size" data-size="240" style="font-size: 0.74rem;">L</button>
+        </div>
+      </div>
+
       <!-- Canvas Comparator with Inspection Glass -->
       <div class="canvas-wrapper">
         <canvas id="canvas-comparator"></canvas>
-
-        <!-- Top-Left HUD (Window / Level) -->
-        <div class="hud-overlay hud-left">
-          <span class="hud-badge badge-wl-display">WL: 40 / WW: 350</span>
-          <button class="hud-btn preset-soft active">Soft</button>
-          <button class="hud-btn preset-bone">Bone</button>
-          <button class="hud-btn preset-lung">Lung</button>
-          <button class="hud-btn preset-metal">Metal</button>
-        </div>
-
-        <!-- Top-Right HUD (Inspection Glass Controls) -->
-        <div class="hud-overlay hud-right">
-          <button id="btn-toggle-glass" class="hud-btn active">Glass</button>
-          <button class="hud-btn btn-glass-size" data-size="80">S</button>
-          <button class="hud-btn btn-glass-size active" data-size="160">M</button>
-          <button class="hud-btn btn-glass-size" data-size="240">L</button>
-        </div>
       </div>
 
       <p style="text-align: center; color: #94a3b8; font-size: 0.8rem; margin: 12px 0 0 0;">

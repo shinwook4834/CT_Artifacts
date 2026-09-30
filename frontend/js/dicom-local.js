@@ -132,12 +132,16 @@ export class LocalDicomLoader {
 
     const pixelOffset = pixelDataElement.dataOffset;
     const numPixels = rows * cols;
-    const rawInt16 = new Int16Array(buffer, pixelOffset, numPixels);
+    const pixelRep = dataSet.uint16("x00280103") || 0; // 0 = unsigned, 1 = signed
+    
+    // Slice safe copy to ensure byte alignment
+    const sliceBuffer = buffer.slice(pixelOffset, pixelOffset + numPixels * 2);
+    const rawArray = pixelRep === 1 ? new Int16Array(sliceBuffer) : new Uint16Array(sliceBuffer);
 
     // Compute HU array (Int16)
     const huArray = new Int16Array(numPixels);
     for (let i = 0; i < numPixels; i++) {
-      huArray[i] = Math.round(rawInt16[i] * slope + intercept);
+      huArray[i] = Math.round(rawArray[i] * slope + intercept);
     }
 
     return {
