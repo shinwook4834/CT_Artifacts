@@ -130,7 +130,7 @@ def detect_approach_a_slice_contours(
                     med_zone[r, min_c + 15 : max_c - 15] = True
         med_zone &= priors.body_mask & (~priors.lung_mask) & (~priors.bone_mask)
 
-    # 4. Peri-Port Influence Zone (Radial Corridor)
+    # 4. Peri-Port Influence Zone (Radial Corridor & Thoracic Reach)
     Y, X = np.ogrid[:h, :w]
     if has_port and np.any(port_mask):
         dist_zone = distance_transform_edt(~port_mask)
@@ -147,36 +147,73 @@ def detect_approach_a_slice_contours(
         port_center = None
         port_pixel_count = 0
 
-    peri_zone = (dist_zone <= peri_zone_radius_px) & priors.body_mask & (~priors.lung_mask) & (~med_zone)
     dist_skin = cv2.distanceTransform(priors.body_mask.astype(np.uint8), cv2.DIST_L2, 5)
 
-    # 5. Physics-Informed Residual Anomaly Detection
-    # 5A: Photon Starvation Dark Streaks
-    dark_shadows = peri_zone & (~priors.lung_mask) & (~port_mask) & (
+    # 5. Physics-Informed Streak and Flare Anomaly Detection
+    # 5A: Peri-port Subcutaneous & Pectoral Zone
+    peri_zone = (dist_zone <= peri_zone_radius_px) & priors.body_mask & (~priors.lung_mask) & (~med_zone) & (dist_skin >= 3)
+    non_med_dark = peri_zone & (~port_mask) & (
         (hu_slice < -140.0) | ((dist_skin >= 16.0) & (hu_slice < -50.0))
     )
-
-    # 5B: Beam Hardening & Metal Scatter Bright Flares
-    bright_flares = peri_zone & (~priors.bone_mask) & (~port_mask) & (
+    non_med_bright = peri_zone & (~priors.bone_mask) & (~port_mask) & (
         (hu_slice > 135.0) & (hu_slice < 1800.0)
     )
 
-    raw_artifact = (dark_shadows | bright_flares) & peri_zone & (~port_mask)
+    # 5B: Mediastinum / Heart Radial Streak Detection (Physics-Informed Polar Ray Decomposition)
+    # Metal projection streaks travel along straight lines radiating from the port center.
+    # In polar coordinates (r, theta) centered at port_center, radial streak lines become horizontal lines.
+    med_streak_dark = np.zeros((h, w), dtype=bool)
+    med_streak_bright = np.zeros((h, w), dtype=bool)
+
+    if (has_port or port_anchor is not None) and port_center is not None:
+        py, px = port_center
+        max_polar_radius = int(min(240, max(h, w)))
+        clean_hu = np.nan_to_num(hu_slice, nan=-1000.0, posinf=3000.0, neginf=-1000.0)
+
+        # Forward polar transform (360 angles, max_polar_radius radius)
+        polar = cv2.warpPolar(clean_hu, (max_polar_radius, 360), (px, py), max_polar_radius, cv2.WARP_POLAR_LINEAR)
+        pad = 20
+        polar_padded = np.pad(polar, ((pad, pad), (0, 0)), mode="wrap")
+        smooth = cv2.blur(polar_padded, (1, 21))[pad:-pad, :]
+        residual = polar - smooth
+
+        # Radial streaks are strictly horizontal in polar space (constant angle theta across radius r)
+        k_h = cv2.getStructuringElement(cv2.MORPH_RECT, (11, 1))
+
+        polar_dark = ((residual < -25.0) & (polar < 20.0)).astype(np.uint8)
+        polar_dark_h = cv2.morphologyEx(polar_dark, cv2.MORPH_OPEN, k_h).astype(bool)
+
+        polar_bright = ((residual > 30.0) & (polar > 65.0)).astype(np.uint8)
+        polar_bright_h = cv2.morphologyEx(polar_bright, cv2.MORPH_OPEN, k_h).astype(bool)
+
+        # Inverse polar transform back to CT Cartesian grid
+        inv_dark = cv2.warpPolar(
+            polar_dark_h.astype(np.float32), (w, h), (px, py), max_polar_radius,
+            cv2.WARP_POLAR_LINEAR + cv2.WARP_INVERSE_MAP
+        ) > 0.2
+        inv_bright = cv2.warpPolar(
+            polar_bright_h.astype(np.float32), (w, h), (px, py), max_polar_radius,
+            cv2.WARP_POLAR_LINEAR + cv2.WARP_INVERSE_MAP
+        ) > 0.2
+
+        med_corridor = med_zone & (dist_zone <= 220.0) & (dist_skin >= 8)
+        med_streak_dark = med_corridor & inv_dark & (~port_mask) & (~priors.lung_mask) & (~priors.bone_mask)
+        med_streak_bright = med_corridor & inv_bright & (~port_mask) & (~priors.lung_mask) & (~priors.bone_mask)
+
+    dark_shadows = non_med_dark | med_streak_dark
+    bright_flares = non_med_bright | med_streak_bright
+    raw_artifact = dark_shadows | bright_flares
 
     # 6. Morphological Cleanup & Connectivity
     k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     art_closed = cv2.morphologyEx(raw_artifact.astype(np.uint8), cv2.MORPH_CLOSE, k_close).astype(bool)
-    k_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    art_opened = cv2.morphologyEx(art_closed.astype(np.uint8), cv2.MORPH_OPEN, k_open).astype(bool)
+    art_closed &= priors.body_mask & (~priors.lung_mask) & (~priors.bone_mask) & (~port_mask) & (dist_skin >= 2)
 
-    # Strictly protect anatomical organs
-    art_opened &= peri_zone & (~port_mask) & (~priors.lung_mask) & (~priors.bone_mask)
-
-    # Eliminate tiny isolated noise fragments (< 20 px)
-    num_a, labels_a, stats_a, _ = cv2.connectedComponentsWithStats(art_opened.astype(np.uint8))
-    final_art = np.zeros_like(art_opened)
+    # Eliminate tiny isolated noise fragments (< 25 px)
+    num_a, labels_a, stats_a, _ = cv2.connectedComponentsWithStats(art_closed.astype(np.uint8))
+    final_art = np.zeros_like(art_closed)
     for i in range(1, num_a):
-        if stats_a[i, cv2.CC_STAT_AREA] >= 20:
+        if stats_a[i, cv2.CC_STAT_AREA] >= 25:
             final_art |= (labels_a == i)
 
     artifact_pixel_count = int(np.sum(final_art))
