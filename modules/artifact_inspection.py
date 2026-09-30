@@ -150,8 +150,13 @@ def detect_approach_a_slice_contours(
     Y, X = np.ogrid[:h, :w]
     if has_port and np.any(port_mask):
         dist_zone = distance_transform_edt(~port_mask)
-        port_ys, port_xs = np.where(port_mask)
-        port_center = (float(np.mean(port_ys)), float(np.mean(port_xs)))
+        num_cp, lbls_cp, stats_cp, centroids_cp = cv2.connectedComponentsWithStats(port_mask.astype(np.uint8))
+        if num_cp > 1:
+            main_c_idx = 1 + np.argmax(stats_cp[1:, cv2.CC_STAT_AREA])
+            port_center = (float(centroids_cp[main_c_idx][1]), float(centroids_cp[main_c_idx][0]))
+        else:
+            port_ys, port_xs = np.where(port_mask)
+            port_center = (float(np.mean(port_ys)), float(np.mean(port_xs)))
         port_pixel_count = int(np.sum(port_mask))
     elif port_anchor is not None:
         anchor_y, anchor_x = port_anchor
@@ -194,22 +199,27 @@ def detect_approach_a_slice_contours(
         smooth = cv2.blur(polar_padded, (1, 21))[pad:-pad, :]
         residual = polar - smooth
 
-        # Radial streaks are strictly horizontal in polar space (constant angle theta across radius r)
-        k_h = cv2.getStructuringElement(cv2.MORPH_RECT, (11, 1))
+        # Radial streaks are horizontal lines in polar space with slight angular width (height 2 rows)
+        k_h = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 2))
 
-        polar_dark = ((residual < -25.0) & (polar < 20.0)).astype(np.uint8)
+        polar_dark = ((residual < -12.0) & (polar < 35.0)).astype(np.uint8)
         polar_dark_h = cv2.morphologyEx(polar_dark, cv2.MORPH_OPEN, k_h).astype(bool)
 
-        polar_bright = ((residual > 30.0) & (polar > 65.0)).astype(np.uint8)
+        polar_bright = ((residual > 12.0) & (polar > 50.0)).astype(np.uint8)
         polar_bright_h = cv2.morphologyEx(polar_bright, cv2.MORPH_OPEN, k_h).astype(bool)
+
+        # Bridge small radial gaps along ray projection
+        k_rad = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 1))
+        polar_dark_c = cv2.morphologyEx(polar_dark_h.astype(np.uint8), cv2.MORPH_CLOSE, k_rad).astype(bool)
+        polar_bright_c = cv2.morphologyEx(polar_bright_h.astype(np.uint8), cv2.MORPH_CLOSE, k_rad).astype(bool)
 
         # Inverse polar transform back to CT Cartesian grid
         inv_dark = cv2.warpPolar(
-            polar_dark_h.astype(np.float32), (w, h), (px, py), max_polar_radius,
+            polar_dark_c.astype(np.float32), (w, h), (px, py), max_polar_radius,
             cv2.WARP_POLAR_LINEAR + cv2.WARP_INVERSE_MAP
         ) > 0.2
         inv_bright = cv2.warpPolar(
-            polar_bright_h.astype(np.float32), (w, h), (px, py), max_polar_radius,
+            polar_bright_c.astype(np.float32), (w, h), (px, py), max_polar_radius,
             cv2.WARP_POLAR_LINEAR + cv2.WARP_INVERSE_MAP
         ) > 0.2
 
