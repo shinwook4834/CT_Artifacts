@@ -7,8 +7,6 @@ sdk: gradio
 app_file: app.py
 pinned: false
 license: mit
-hardware: zero-gpu
-
 ---
 
 # ChemoPort CT-MAR Studio 🩺⚡
