@@ -3,13 +3,13 @@
  * Dual-Mode: Uses FastAPI Backend (16GB RAM) if available, or 100% Client-Side Static if hosted on HF Static Space.
  */
 
-import { api } from "./api.js?v=2.0.4";
-import { LocalDicomLoader } from "./dicom-local.js?v=2.0.4";
-import { MedicalViewport } from "./viewport.js?v=2.0.4";
-import { ContourOverlay } from "./inspection.js?v=2.0.4";
-import { InspectionGlassComparator } from "./comparator.js?v=2.0.4";
-import { aiEngine } from "./onnx-mar.js?v=2.0.4";
-import { ProfileChart } from "./export-view.js?v=2.0.4";
+import { api } from "./api.js?v=2.0.5";
+import { LocalDicomLoader } from "./dicom-local.js?v=2.0.5";
+import { MedicalViewport } from "./viewport.js?v=2.0.5";
+import { ContourOverlay } from "./inspection.js?v=2.0.5";
+import { InspectionGlassComparator } from "./comparator.js?v=2.0.5";
+import { aiEngine } from "./onnx-mar.js?v=2.0.5";
+import { ProfileChart } from "./export-view.js?v=2.0.5";
 
 class AppState {
   constructor() {
@@ -93,31 +93,16 @@ function initDropzone() {
 
   if (!dropzone || !fileInput) return;
 
-  dropzone.addEventListener("click", () => {
-    fileInput.click();
-  });
-
-  dropzone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dropzone.classList.add("dragover");
-  });
-
-  dropzone.addEventListener("dragleave", () => {
-    dropzone.classList.remove("dragover");
-  });
-
-  dropzone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropzone.classList.remove("dragover");
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFiles(Array.from(e.dataTransfer.files));
-    }
-  });
+  // Native transparent overlay handles direct user clicks (100% reliable)
+  fileInput.addEventListener("dragover", () => dropzone.classList.add("dragover"));
+  fileInput.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+  fileInput.addEventListener("drop", () => dropzone.classList.remove("dragover"));
 
   fileInput.addEventListener("change", (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const selected = Array.from(e.target.files);
-      fileInput.value = ""; // Reset so same file re-selection works
+      // Temporarily hide file-input overlay so user cannot re-click while progress bar is active
+      fileInput.style.display = "none";
       handleFiles(selected);
     }
   });
@@ -188,6 +173,7 @@ function initDropzone() {
     summaryCard.style.display = "none";
     dropzone.style.display = "flex";
     dropzoneContent.style.display = "flex";
+    fileInput.style.display = "block";
     fileInput.value = "";
     document.getElementById("nav-next-1").disabled = true;
     updateStepUI(1);
