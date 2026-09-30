@@ -845,11 +845,8 @@ if workflow_mode == "1. Image Loading":
                               <path d="M12 12v9"/>
                               <path d="m16 16-4-4-4 4"/>
                             </svg>
-                            <div style="font-size: 2.3rem; font-weight: 800; color: #0f172a; letter-spacing: -0.6px; margin: 2px 0 0 0; line-height: 1.1;">
+                            <div style="font-size: 2.3rem; font-weight: 800; color: #0f172a; letter-spacing: -0.6px; margin: 4px 0 0 0; line-height: 1.1;">
                               {pct}%
-                            </div>
-                            <div style="font-size: 0.95rem; font-weight: 700; color: #64748b; letter-spacing: -0.2px;">
-                              {rem_pct}% 남음
                             </div>
                             <div style="width: 320px; max-width: 85%; height: 8px; background: rgba(226, 232, 240, 0.85); border-radius: 9999px; margin-top: 14px; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);">
                               <div style="width: {pct}%; height: 100%; background: linear-gradient(90deg, #0d9488 0%, #06b6d4 100%); border-radius: 9999px; transition: width 0.15s ease;"></div>
