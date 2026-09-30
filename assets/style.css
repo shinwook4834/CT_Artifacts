@@ -386,31 +386,21 @@ html, body, [data-testid="stAppViewContainer"] {
   gap: 12px !important;
 }
 
-/* Cloud upload icon: Guarantee exactly ONE unified emerald cloud icon across all Streamlit versions */
+/* Cloud upload icon sizing & styling */
 [data-testid="stFileUploaderDropzone"] svg,
 [data-testid="stFileUploaderDropzoneInstructions"] svg {
-  display: none !important;
+  color: #0d9488 !important;
+  width: 58px !important;
+  height: 58px !important;
+  filter: drop-shadow(0 6px 14px rgba(13, 148, 136, 0.25)) !important;
+  margin-bottom: 2px !important;
+  transition: transform 0.2s ease !important;
 }
 
-[data-testid="stFileUploaderDropzoneInstructions"]::before,
-[data-testid="stFileUploaderDropzone"]:not(:has([data-testid="stFileUploaderDropzoneInstructions"]))::before {
-  content: "";
-  display: block;
-  width: 58px;
-  height: 58px;
-  margin: 0 auto 6px auto;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230d9488' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242'/%3E%3Cpath d='M12 12v9'/%3E%3Cpath d='m16 16-4-4-4 4'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: contain;
-  filter: drop-shadow(0 6px 14px rgba(13, 148, 136, 0.25));
-  transition: transform 0.2s ease;
+[data-testid="stFileUploaderDropzone"]:hover svg {
+  transform: scale(1.08) translateY(-2px) !important;
 }
 
-[data-testid="stFileUploaderDropzone"]:hover [data-testid="stFileUploaderDropzoneInstructions"]::before,
-[data-testid="stFileUploaderDropzone"]:hover::before {
-  transform: scale(1.08) translateY(-2px);
-}
 
 
 /* Main 'Drag and drop file here' text */
@@ -650,12 +640,6 @@ div[data-testid="stHorizontalBlock"]:has(#stepper-hidden-marker) {
 [data-testid="stFileUploaderDeleteBtn"],
 [data-testid="stFileUploaderPagination"],
 [data-testid="stFileUploaderFiles"],
-[data-testid="stFileUploader"] ul,
-[data-testid="stFileUploader"] li,
-[data-testid="stFileUploader"] section:not([data-testid="stFileUploaderDropzone"]),
-[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"] + div,
-[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"] + ul,
-[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"] + section,
 [data-testid="stFileUploaderDropzone"] [data-testid="stFileUploaderDeleteBtn"],
 [data-testid="stFileUploaderDropzone"] [data-testid="stFileUploaderFile"],
 [data-testid="stFileUploaderDropzone"] [data-testid="stFileUploaderFileData"],
@@ -671,8 +655,7 @@ div[data-testid="stHorizontalBlock"]:has(#stepper-hidden-marker) {
 .stFileUploaderFileData,
 .stFileUploaderFileName,
 .stFileUploader [role="progressbar"],
-.stFileUploader [data-testid="stProgressBar"],
-.stFileUploader ul {
+.stFileUploader [data-testid="stProgressBar"] {
   display: none !important;
   visibility: hidden !important;
   height: 0 !important;

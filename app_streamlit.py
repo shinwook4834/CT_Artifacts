@@ -6,8 +6,13 @@ Metal Artifact Reduction (MAR) and radiation dose integrity verification.
 
 import gc
 import os
+import sys
 import io
 import uuid
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 from typing import Optional, Tuple
 import json
 import base64
@@ -833,7 +838,7 @@ if workflow_mode == "1. Image Loading":
                     rem_pct = 100 - pct
                     uploader_placeholder.markdown(
                         f"""
-                        <div style="background: rgba(255, 255, 255, 0.78); backdrop-filter: blur(28px) saturate(180%); -webkit-backdrop-filter: blur(28px) saturate(180%); border: 2px dashed rgba(13, 148, 136, 0.45); border-radius: 26px; padding: 46px 32px; text-align: center; box-shadow: 0 16px 45px -10px rgba(15, 118, 110, 0.08), inset 0 1px 1px #ffffff; box-sizing: border-box; max-width: 860px; margin: 0 auto;">
+                        <div style="background: rgba(255, 255, 255, 0.78); backdrop-filter: blur(28px) saturate(180%); -webkit-backdrop-filter: blur(28px) saturate(180%); border: 2px dashed rgba(13, 148, 136, 0.45); border-radius: 26px; min-height: 330px; padding: 58px 36px; text-align: center; box-shadow: 0 16px 45px -10px rgba(15, 118, 110, 0.08), inset 0 1px 1px #ffffff; box-sizing: border-box; max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center;">
                           <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;">
                             <svg style="color: #0d9488; width: 56px; height: 56px; filter: drop-shadow(0 6px 14px rgba(13, 148, 136, 0.25)); margin-bottom: 2px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                               <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
