@@ -3139,14 +3139,10 @@ if st.session_state.current_hu is not None:
 
 
         st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
-        _, back_col, next_col, _ = st.columns([1.7, 0.8, 0.8, 1.7])
+        _, back_col, _ = st.columns([2.1, 0.8, 2.1])
         with back_col:
             if st.button("← Back", key="nav_back_2", use_container_width=True, help="Back to 1. Image Loading"):
                 st.session_state.current_workflow_step = "1. Image Loading"
-                st.rerun()
-        with next_col:
-            if st.button("Next →", key="nav_next_2", type="primary", use_container_width=True, help="Proceed to 3. AI Correction"):
-                st.session_state.current_workflow_step = "3. AI Correction"
                 st.rerun()
 
     # STEP 4: 4. Save & Export (Save & TPS Export)
