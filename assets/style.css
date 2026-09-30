@@ -401,25 +401,6 @@ html, body, [data-testid="stAppViewContainer"] {
   transform: scale(1.08) translateY(-2px) !important;
 }
 
-/* Fallback cloud upload icon if browser or Streamlit version lacks native SVG */
-[data-testid="stFileUploaderDropzone"]:not(:has(svg))::before,
-[data-testid="stFileUploaderDropzoneInstructions"]:not(:has(svg))::before {
-  content: "";
-  display: block;
-  width: 58px;
-  height: 58px;
-  margin: 0 auto 6px auto;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230d9488' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242'/%3E%3Cpath d='M12 12v9'/%3E%3Cpath d='m16 16-4-4-4 4'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: contain;
-  filter: drop-shadow(0 6px 14px rgba(13, 148, 136, 0.25));
-  transition: transform 0.2s ease;
-}
-
-[data-testid="stFileUploaderDropzone"]:not(:has(svg)):hover::before {
-  transform: scale(1.08) translateY(-2px);
-}
 
 /* Main 'Drag and drop file here' text */
 [data-testid="stFileUploaderDropzone"] span,
