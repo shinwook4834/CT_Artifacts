@@ -53,18 +53,25 @@ def render_custom_html(html_str: str, height: int = 500):
 
 
 
-def process_series_slices_mar(slices_list, ai_weight: Optional[float] = None):
-    """Processes a DICOM series or single slice to compute AI restorations and vector contours.
-    Executes the 2-Step AI Restoration Workflow:
-    Step 1: Continuous Catheter Wire Restoration across all slices.
-    Step 2: Natural ChemoPort Metal Artifact Reduction.
-    """
+def process_series_slices_mar(slices_list, streak_reduction_strength: Optional[float] = None, ai_weight: Optional[float] = None):
+    """Zero-correction baseline with Approach A (Physics-Informed Anatomical Residual AI) artifact inspection.
+    CT image pixel values are 100% preserved (recon_hu = hu.copy()), while accurate vector contours
+    are extracted for Step 2 Artifact Inspection."""
     if not slices_list:
         return []
 
-    from modules.ai_mar_pipeline import run_full_ai_restoration_pipeline
-    inpaint_str = float(st.session_state.get("inpaint_strength", 0.90))
-    return run_full_ai_restoration_pipeline(slices_list, inpaint_strength=inpaint_str)
+    from modules.artifact_inspection import detect_series_inspection_contours
+    inspection_results = detect_series_inspection_contours(slices_list)
+
+    results = []
+    for idx, sl in enumerate(slices_list):
+        hu = sl[1] if isinstance(sl, (tuple, list)) else sl
+        recon_hu = hu.copy()  # Zero correction: raw CT preserved
+        cnts, stats, _ = inspection_results[idx]
+        stats["streak_suppression_pct"] = 0.0
+        results.append((recon_hu, stats, cnts))
+
+    return results
 
 
 def update_recon_ai_weight(new_weight: float):
@@ -945,20 +952,20 @@ if st.session_state.current_hu is not None:
     cad_density_override = True
     streak_strength = 0.85
 
-    # Reconstruct if not already cached
+    # Zero-correction baseline: recon_hu is an exact copy of hu_orig
     curr_idx = st.session_state.current_slice_idx
     if st.session_state.recon_hu is None:
         if curr_idx in st.session_state.recon_cache:
             recon_hu, stats = st.session_state.recon_cache[curr_idx]
         else:
-            recon_hu, _, _, stats = baseline_chemoport_mar(
-                hu_orig,
-                metal_threshold=metal_threshold,
-                cad_prior_override=cad_density_override,
-                streak_reduction_strength=streak_strength,
-                ai_weight=float(st.session_state.get("ai_weight", 1.0)),
-                engine_type=st.session_state.get("ai_engine_key", "ccaf_transformer"),
-            )
+            recon_hu = hu_orig.copy()
+            stats = {
+                "metal_detected": False,
+                "metal_pixel_count": 0,
+                "artifact_pixel_count": 0,
+                "streak_suppression_pct": 0.0,
+                "status": "Raw Uncorrected CT (Zero Correction)",
+            }
             st.session_state.recon_cache[curr_idx] = (recon_hu, stats)
         st.session_state.recon_hu = recon_hu
         st.session_state.recon_stats = stats
@@ -977,7 +984,7 @@ if st.session_state.current_hu is not None:
     # STEP 3: 3. AI Correction (Dual-View MAR Studio)
     if workflow_mode == "3. AI Correction":
         # Check pipeline version to invalidate stale cache across hot-reloads
-        CURRENT_PIPELINE_VER = "2026-09-28-v3-surgical-wire-normalization"
+        CURRENT_PIPELINE_VER = "2026-09-30-v6-approach-a-inspection"
         if st.session_state.get("ai_pipeline_version") != CURRENT_PIPELINE_VER:
             st.session_state.ai_pipeline_version = CURRENT_PIPELINE_VER
             st.session_state.recon_cache = {}
@@ -1025,36 +1032,7 @@ if st.session_state.current_hu is not None:
         initial_slice = st.session_state.current_slice_idx
         slice_badge_str = f"Slice {initial_slice + 1} / {total_slices}" if total_slices > 1 else ""
 
-        # 2-Step AI Restoration Workflow Status Banner (Apple Liquid Glass)
-        st.markdown(
-            """
-            <div style="background: rgba(255, 255, 255, 0.75); backdrop-filter: blur(24px) saturate(180%);
-                        -webkit-backdrop-filter: blur(24px) saturate(180%);
-                        border: 1px solid rgba(226, 232, 240, 0.95); border-radius: 18px;
-                        padding: 12px 18px; margin-bottom: 14px; margin-top: 4px;
-                        box-shadow: 0 6px 20px -6px rgba(0, 0, 0, 0.04);">
-              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                <span style="font-size: 0.82rem; font-weight: 800; color: #0f172a; letter-spacing: -0.2px; display: inline-flex; align-items: center; gap: 6px;">
-                  ✨ AI Correction Workflow
-                </span>
-                <span style="font-size: 0.70rem; font-weight: 700; color: #0d9488; background: rgba(13, 148, 136, 0.08); padding: 2px 10px; border-radius: 9999px; border: 1px solid rgba(13, 148, 136, 0.25);">
-                  Active Pipeline
-                </span>
-              </div>
-              <div style="display: flex; gap: 12px; font-size: 0.76rem; color: #334155; line-height: 1.45;">
-                <div style="flex: 1; background: rgba(14, 165, 233, 0.05); border-left: 3px solid #0284c7; padding: 8px 12px; border-radius: 0 10px 10px 0;">
-                  <strong style="color: #0369a1; font-size: 0.78rem;">1. AI Continuous Surgical Guide Wire Restoration:</strong><br/>
-                  Original CT에서 수술 가이드 와이어(Hookwire)를 116~135번 모든 슬라이스에 걸쳐 끊김 없이 자연스러운 3차원 연속 궤적과 CT PSF로 복원
-                </div>
-                <div style="flex: 1; background: rgba(16, 185, 129, 0.05); border-left: 3px solid #059669; padding: 8px 12px; border-radius: 0 10px 10px 0;">
-                  <strong style="color: #047857; font-size: 0.78rem;">2. AI Normal CT Reconstruction (ChemoPort Removal):</strong><br/>
-                  케모포트 금속 왜곡 및 방사선 아티팩트(다크 섀도우/플레어)를 정상 CT 유방 연조직으로 완전 치환하여 일반 CT 영상처럼 복원
-                </div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+
 
         orig_json = json.dumps(st.session_state.orig_b64_list)
         recon_json = json.dumps(st.session_state.recon_b64_list)
@@ -1309,7 +1287,7 @@ if st.session_state.current_hu is not None:
             <div class="glass-viewer-card">
               <div class="glass-viewer-header">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <span class="apple-pill pill-recon">RECONSTRUCTED CT (AI Wire + MAR)</span>
+                  <span class="apple-pill pill-recon">RECONSTRUCTED CT (Raw Uncorrected)</span>
                   <button id="btn-reset-single" class="apple-pill pill-reset" style="display: none;" title="Double-click or click to reset 1x full view">
                     ↺ Reset Zoom <span id="zoom-factor-single"></span>
                   </button>
@@ -2094,8 +2072,6 @@ if st.session_state.current_hu is not None:
         """
         render_custom_html(dual_canvas_html, height=680)
 
-
-
         st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
         _, back_col, next_col, _ = st.columns([1.7, 0.8, 0.8, 1.7])
         with back_col:
@@ -2136,7 +2112,13 @@ if st.session_state.current_hu is not None:
         all_orig_json = json.dumps(st.session_state.all_orig_b64_list)
         scan_id = st.session_state.scan_id
 
-        if "contours_cache" not in st.session_state or len(st.session_state.contours_cache) != total_slices:
+        INSPECTION_PIPELINE_VER = "2026-09-30-v6-approach-a-inspection"
+        if (
+            "contours_cache" not in st.session_state
+            or len(st.session_state.contours_cache) != total_slices
+            or st.session_state.get("inspection_pipeline_version") != INSPECTION_PIPELINE_VER
+        ):
+            st.session_state.inspection_pipeline_version = INSPECTION_PIPELINE_VER
             slices_src = (
                 st.session_state.slice_list
                 if st.session_state.slice_list
@@ -2204,6 +2186,16 @@ if st.session_state.current_hu is not None:
             background: rgba(244, 63, 94, 0.12);
             border: 1px solid rgba(244, 63, 94, 0.25);
             color: #be123c;
+          }}
+          .pill-port-active {{
+            background: rgba(244, 63, 94, 0.14);
+            border: 1px solid rgba(244, 63, 94, 0.35);
+            color: #be123c;
+          }}
+          .pill-normal-anatomy {{
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.30);
+            color: #047857;
           }}
           .pill-reset {{
             background: rgba(15, 23, 42, 0.08);
@@ -2375,6 +2367,7 @@ if st.session_state.current_hu is not None:
               <div class="glass-viewer-header">
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <span class="apple-pill pill-orig">ORIGINAL CT</span>
+                  <span id="contour-status-badge" class="apple-pill pill-normal-anatomy"><span style="color:#10b981;font-size:0.9em;">✓</span> Normal CT Anatomy</span>
                   <button id="btn-reset-single" class="apple-pill pill-reset" style="display: none;" title="Double-click or click to reset 1x full view">
                     ↺ Reset Zoom <span id="zoom-factor-single"></span>
                   </button>
@@ -2634,6 +2627,19 @@ if st.session_state.current_hu is not None:
               renderCanvas(getActiveOrigImage(current));
               if (total > 1 && badge) {{
                 badge.innerText = `Slice ${{current + 1}} / ${{total}}`;
+              }}
+              const sliceContours = (contoursData && contoursData.length > current) ? contoursData[current] : null;
+              const statusBadge = document.getElementById('contour-status-badge');
+              if (statusBadge) {{
+                if (sliceContours && sliceContours.port && sliceContours.port.length > 0) {{
+                  const pPx = sliceContours.port_px || 0;
+                  const aPx = sliceContours.art_px || 0;
+                  statusBadge.innerHTML = `<span style="color:#f43f5e;font-size:0.9em;">●</span> ChemoPort: ${{pPx}} px &nbsp; <span style="color:#f59e0b;font-size:0.9em;">●</span> Artifacts: ${{aPx}} px`;
+                  statusBadge.className = 'apple-pill pill-port-active';
+                }} else {{
+                  statusBadge.innerHTML = `<span style="color:#10b981;font-size:0.9em;">✓</span> Normal CT Anatomy`;
+                  statusBadge.className = 'apple-pill pill-normal-anatomy';
+                }}
               }}
             }}
 
