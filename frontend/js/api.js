@@ -12,11 +12,19 @@ export class ApiClient {
   }
 
   async checkHealth() {
+    // If on a static hosting domain, skip backend request entirely (avoids 20s CloudFront timeout)
+    const host = window.location.hostname;
+    if (host.includes("static.hf.space") || host.includes("github.io") || host.includes("pages.dev")) {
+      return null;
+    }
     try {
-      const res = await fetch(`${this.baseUrl}/api/health`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 800);
+      const res = await fetch(`${this.baseUrl}/api/health`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!res.ok) return null;
       return await res.json();
     } catch (e) {
-      console.warn("Backend health check failed:", e);
       return null;
     }
   }

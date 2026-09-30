@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ChemoPort CT-MAR Studio</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🩺</text></svg>">
-  <link rel="stylesheet" href="./css/style.css?v=2.0.3">
+  <link rel="stylesheet" href="./css/style.css?v=2.0.4">
   <style>
     /* SPA Specific Additions & Cleanups */
     .app-header {
@@ -225,9 +225,9 @@
     </div>
 
     <!-- Dropzone Area -->
-    <label for="file-input" id="dropzone" class="dropzone-box" style="cursor: pointer;">
+    <div id="dropzone" class="dropzone-box" style="cursor: pointer;">
       <!-- Normal Dropzone Content -->
-      <div id="dropzone-content" style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+      <div id="dropzone-content" style="display: flex; flex-direction: column; align-items: center; gap: 12px; pointer-events: none;">
         <svg style="color: #0d9488; width: 58px; height: 58px; filter: drop-shadow(0 6px 14px rgba(13, 148, 136, 0.25));" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
           <path d="M12 12v9"/>
@@ -252,8 +252,8 @@
           <div id="upload-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #0d9488 0%, #06b6d4 100%); border-radius: 9999px; transition: width 0.15s ease;"></div>
         </div>
       </div>
-      <input type="file" id="file-input" multiple accept=".dcm,.zip" style="display: none;">
-    </label>
+    </div>
+    <input type="file" id="file-input" multiple accept=".dcm,.zip" style="display: none;">
 
     <!-- Loaded Dataset Summary Card -->
     <div id="dataset-summary-card" class="viewer-card" style="display: none; max-width: 860px; margin: 0 auto;">
@@ -435,6 +435,6 @@
   <!-- ONNX Runtime Web for Client GPU AI Inference -->
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
   <!-- Main Application Script (ES Module) -->
-  <script type="module" src="./js/app.js?v=2.0.3"></script>
+  <script type="module" src="./js/app.js?v=2.0.4"></script>
 </body>
 </html>

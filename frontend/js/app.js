@@ -3,13 +3,13 @@
  * Dual-Mode: Uses FastAPI Backend (16GB RAM) if available, or 100% Client-Side Static if hosted on HF Static Space.
  */
 
-import { api } from "./api.js?v=2.0.3";
-import { LocalDicomLoader } from "./dicom-local.js?v=2.0.3";
-import { MedicalViewport } from "./viewport.js?v=2.0.3";
-import { ContourOverlay } from "./inspection.js?v=2.0.3";
-import { InspectionGlassComparator } from "./comparator.js?v=2.0.3";
-import { aiEngine } from "./onnx-mar.js?v=2.0.3";
-import { ProfileChart } from "./export-view.js?v=2.0.3";
+import { api } from "./api.js?v=2.0.4";
+import { LocalDicomLoader } from "./dicom-local.js?v=2.0.4";
+import { MedicalViewport } from "./viewport.js?v=2.0.4";
+import { ContourOverlay } from "./inspection.js?v=2.0.4";
+import { InspectionGlassComparator } from "./comparator.js?v=2.0.4";
+import { aiEngine } from "./onnx-mar.js?v=2.0.4";
+import { ProfileChart } from "./export-view.js?v=2.0.4";
 
 class AppState {
   constructor() {
@@ -93,7 +93,9 @@ function initDropzone() {
 
   if (!dropzone || !fileInput) return;
 
-  // Native label handles file-input click
+  dropzone.addEventListener("click", () => {
+    fileInput.click();
+  });
 
   dropzone.addEventListener("dragover", (e) => {
     e.preventDefault();
@@ -107,14 +109,16 @@ function initDropzone() {
   dropzone.addEventListener("drop", (e) => {
     e.preventDefault();
     dropzone.classList.remove("dragover");
-    if (e.dataTransfer.files.length > 0) {
-      handleFiles(e.dataTransfer.files);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFiles(Array.from(e.dataTransfer.files));
     }
   });
 
   fileInput.addEventListener("change", (e) => {
-    if (e.target.files.length > 0) {
-      handleFiles(e.target.files);
+    if (e.target.files && e.target.files.length > 0) {
+      const selected = Array.from(e.target.files);
+      fileInput.value = ""; // Reset so same file re-selection works
+      handleFiles(selected);
     }
   });
 
