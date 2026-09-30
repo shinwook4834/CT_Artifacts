@@ -65,87 +65,6 @@ def parse_uploaded_file_cached(file_name: str, file_bytes: bytes):
         return []
 
 
-@st.cache_data(show_spinner=False, max_entries=1)
-def load_default_demo_series():
-    """Generates realistic clinical demo DICOM slices (slices 116..135) from repository artifacts."""
-    import glob
-    from pydicom.dataset import Dataset, FileMetaDataset
-    from pydicom.uid import ExplicitVRLittleEndian, generate_uid
-    series = []
-    png_files = sorted(glob.glob(os.path.join(os.path.dirname(__file__), "full_slice_z*.png")))
-    if not png_files:
-        png_files = sorted(glob.glob("full_slice_z*.png"))
-
-    if not png_files:
-        h, w = 512, 512
-        for z in range(116, 136):
-            hu = np.full((h, w), -1000.0, dtype=np.float32)
-            Y, X = np.ogrid[:h, :w]
-            body = ((Y - 256) ** 2 / 180**2 + (X - 256) ** 2 / 210**2) <= 1.0
-            hu[body] = -40.0
-            lung_l = ((Y - 260) ** 2 / 100**2 + (X - 180) ** 2 / 60**2) <= 1.0
-            lung_r = ((Y - 260) ** 2 / 100**2 + (X - 332) ** 2 / 60**2) <= 1.0
-            hu[lung_l | lung_r] = -750.0
-            if 120 <= z <= 130:
-                port = np.sqrt((Y - 188) ** 2 + (X - 328) ** 2) <= 12.0
-                hu[port] = 2850.0
-            ds = Dataset()
-            meta = {
-                "patient_id": "DEMO_PATIENT",
-                "patient_name": "ANON^CHEMOPORT",
-                "series_description": "Synthetic CT Simulation",
-                "instance_number": z,
-                "slice_thickness": "2.5 mm",
-                "pixel_spacing": "0.977 x 0.977 mm",
-                "dimensions": "512 x 512",
-                "metal_pixel_count": int(np.sum(hu >= 2000.0)),
-                "min_hu": float(np.min(hu)),
-                "max_hu": float(np.max(hu)),
-            }
-            series.append((ds, hu, meta))
-        return series
-
-    for i, pf in enumerate(png_files):
-        img_gray = cv2.imread(pf, cv2.IMREAD_GRAYSCALE)
-        if img_gray is None:
-            continue
-        hu = (img_gray.astype(np.float32) / 255.0) * 350.0 - 135.0
-        Y, X = np.ogrid[:512, :512]
-        port_core = np.sqrt((Y - 188)**2 + (X - 328)**2) <= 12.0
-        hu[port_core] = 2850.0
-
-        ds = Dataset()
-        ds.is_little_endian = True
-        ds.is_implicit_VR = False
-        file_meta = FileMetaDataset()
-        file_meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.2"
-        file_meta.MediaStorageSOPInstanceUID = generate_uid()
-        file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
-        ds.file_meta = file_meta
-        ds.PatientName = "DEMO^CHEMOPORT"
-        ds.PatientID = "CT_DEMO_01"
-        ds.Modality = "CT"
-        ds.SeriesDescription = "Thorax Simulation CT"
-        ds.InstanceNumber = 116 + i * 4
-        ds.Rows, ds.Columns = 512, 512
-        ds.SamplesPerPixel = 1
-        ds.PhotometricInterpretation = "MONOCHROME2"
-        ds.PixelSpacing = ["0.9765625", "0.9765625"]
-        ds.SliceThickness = "2.5"
-        meta = {
-            "patient_id": "CT_DEMO_01",
-            "patient_name": "DEMO^CHEMOPORT",
-            "series_description": "Thorax Simulation CT",
-            "instance_number": 116 + i * 4,
-            "slice_thickness": "2.5 mm",
-            "pixel_spacing": "0.977 x 0.977 mm",
-            "dimensions": "512 x 512",
-            "metal_pixel_count": int(np.sum(hu >= 2000.0)),
-            "min_hu": float(np.min(hu)),
-            "max_hu": float(np.max(hu)),
-        }
-        series.append((ds, hu, meta))
-    return series
 
 
 
@@ -897,36 +816,12 @@ if workflow_mode == "1. Image Loading":
             )
 
         if not uploaded_files:
-            st.markdown("<div style='text-align: center; margin: 18px 0 14px 0; color: #64748b; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.5px;'>— OR TEST INSTANTLY WITH CLINICAL DEMO SCAN —</div>", unsafe_allow_html=True)
-            d_col1, d_col2, d_col3 = st.columns([1, 1.5, 1])
-            with d_col2:
-                if st.button("⚡ Load Demo ChemoPort CT Scan (Instant)", use_container_width=True, type="secondary", help="Load pre-configured clinical thorax CT scan with ChemoPort implant (slices 116..135)"):
-                    clear_all_memory(reset_step=False)
-                    gc.collect()
-                    demo_slices = load_default_demo_series()
-                    st.session_state.slice_list = demo_slices
-                    best_slice_idx = find_chemoport_slice_index(demo_slices)
-                    st.session_state.current_slice_idx = best_slice_idx
-                    st.session_state.current_ds = demo_slices[best_slice_idx][0]
-                    st.session_state.current_hu = demo_slices[best_slice_idx][1]
-                    st.session_state.current_meta = demo_slices[best_slice_idx][2]
-                    st.session_state.data_source_name = f"Thorax ChemoPort Demo Scan ({len(demo_slices)} Slices)"
-                    st.session_state.recon_cache = {}
-                    st.session_state.orig_b64_list = []
-                    st.session_state.all_orig_b64_list = []
-                    st.session_state.recon_b64_list = []
-                    st.session_state.all_recon_b64_list = []
-                    st.session_state.contours_cache = []
-                    st.session_state.last_uploaded_files_sig = "DEMO_SCAN"
-                    st.session_state.current_workflow_step = "2. Artifact Inspection"
-                    st.rerun()
-
             st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
             _, back_col, next_col, _ = st.columns([1.7, 0.8, 0.8, 1.7])
             with back_col:
                 st.button("← Back", key="nav_back_1_empty", disabled=True, use_container_width=True)
             with next_col:
-                st.button("Next →", key="nav_next_1_empty", disabled=True, use_container_width=True, help="Please upload a CT scan or click the Demo Scan button first")
+                st.button("Next →", key="nav_next_1_empty", disabled=True, use_container_width=True, help="Please upload a CT scan first")
 
         # Process Data Loading from File Upload (Protected by Upload Signature Cache)
         if uploaded_files:
