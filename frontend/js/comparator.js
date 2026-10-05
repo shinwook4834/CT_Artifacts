@@ -31,6 +31,14 @@ export class InspectionGlassComparator {
     this.mouseY = this.height / 2;
     this.isHovering = false;
 
+    // Zoom & Pan settings
+    this.zoom = 1.0;
+    this.panX = 0;
+    this.panY = 0;
+    this.isLeftDragging = false;
+    this.dragStartX = 0;
+    this.dragStartY = 0;
+
     // Window level
     this.wc = options.windowCenter || 40.0;
     this.ww = options.windowWidth || 350.0;
@@ -40,6 +48,47 @@ export class InspectionGlassComparator {
     this.reconHu = null;
 
     this.bindEvents();
+  }
+
+  zoomIn() {
+    this.setZoom(this.zoom * 1.25);
+  }
+
+  zoomOut() {
+    this.setZoom(this.zoom / 1.25);
+  }
+
+  setZoom(newZoom) {
+    const clamped = Math.max(1.0, Math.min(5.0, newZoom));
+    this.zoom = clamped;
+    if (this.zoom <= 1.001) {
+      this.zoom = 1.0;
+      this.panX = 0;
+      this.panY = 0;
+    } else {
+      const maxPan = 0.5 * (1.0 - 1.0 / this.zoom) + 0.15;
+      this.panX = Math.max(-maxPan, Math.min(maxPan, this.panX));
+      this.panY = Math.max(-maxPan, Math.min(maxPan, this.panY));
+    }
+    this.updateCursor();
+    this.draw();
+  }
+
+  resetZoom() {
+    this.zoom = 1.0;
+    this.panX = 0;
+    this.panY = 0;
+    this.updateCursor();
+    this.draw();
+  }
+
+  updateCursor() {
+    if (!this.canvas) return;
+    if (this.zoom > 1.001) {
+      this.canvas.style.cursor = this.isLeftDragging ? "grabbing" : "grab";
+    } else {
+      this.canvas.style.cursor = "crosshair";
+    }
   }
 
   setWindowLevel(wc, ww) {
@@ -100,8 +149,18 @@ export class InspectionGlassComparator {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.width, this.height);
 
+    const applyTransform = (targetCtx) => {
+      targetCtx.translate(this.width / 2, this.height / 2);
+      targetCtx.translate(this.panX * this.width, this.panY * this.height);
+      targetCtx.scale(this.zoom, this.zoom);
+      targetCtx.translate(-this.width / 2, -this.height / 2);
+    };
+
     // 1. Draw base: Reconstructed CT
+    ctx.save();
+    applyTransform(ctx);
     ctx.drawImage(this.offRecon, 0, 0);
+    ctx.restore();
 
     // 2. Draw Inspection Glass if active
     if (this.glassEnabled && this.isHovering) {
@@ -115,12 +174,17 @@ export class InspectionGlassComparator {
       ctx.roundRect(x, y, this.glassSize, this.glassSize, 14);
       ctx.clip();
 
-      // Draw original CT inside glass
+      // Draw original CT inside glass with identical zoom & pan
+      applyTransform(ctx);
       ctx.drawImage(this.offOrig, 0, 0);
+      ctx.restore();
 
       // Glass inner shadow & border
+      ctx.save();
       ctx.strokeStyle = "#f43f5e";
       ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(x, y, this.glassSize, this.glassSize, 14);
       ctx.stroke();
 
       // Corner brackets & center reticle
@@ -133,10 +197,7 @@ export class InspectionGlassComparator {
       ctx.moveTo(cx, cy - 8); ctx.lineTo(cx, cy + 8);
       ctx.stroke();
 
-      ctx.restore();
-
       // Glass HUD Badge
-      ctx.save();
       ctx.fillStyle = "rgba(244, 63, 94, 0.9)";
       ctx.font = "bold 11px -apple-system, sans-serif";
       const badgeText = "ORIGINAL CT";
@@ -151,6 +212,8 @@ export class InspectionGlassComparator {
   }
 
   bindEvents() {
+    this.canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
     this.canvas.addEventListener("mouseenter", () => {
       this.isHovering = true;
       this.draw();
@@ -158,17 +221,69 @@ export class InspectionGlassComparator {
 
     this.canvas.addEventListener("mouseleave", () => {
       this.isHovering = false;
+      this.isLeftDragging = false;
+      this.updateCursor();
       this.draw();
     });
 
-    this.canvas.addEventListener("mousemove", (e) => {
+    this.canvas.addEventListener("wheel", (e) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) {
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 1.15 : 0.87;
+        this.setZoom(this.zoom * factor);
+      }
+    }, { passive: false });
+
+    this.canvas.addEventListener("mousedown", (e) => {
+      this.dragStartX = e.clientX;
+      this.dragStartY = e.clientY;
+
+      if (e.button === 0 && (this.zoom > 1.001 || e.shiftKey)) {
+        this.isLeftDragging = true;
+        this.updateCursor();
+      }
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (this.isLeftDragging) {
+        const dx = (e.clientX - this.dragStartX) / this.canvas.width;
+        const dy = (e.clientY - this.dragStartY) / this.canvas.height;
+        this.panX += dx;
+        this.panY += dy;
+        const maxPan = 0.5 * (1.0 - 1.0 / this.zoom) + 0.15;
+        this.panX = Math.max(-maxPan, Math.min(maxPan, this.panX));
+        this.panY = Math.max(-maxPan, Math.min(maxPan, this.panY));
+
+        this.dragStartX = e.clientX;
+        this.dragStartY = e.clientY;
+        this.draw();
+        return;
+      }
+
       const rect = this.canvas.getBoundingClientRect();
-      const scaleX = this.width / rect.width;
-      const scaleY = this.height / rect.height;
-      this.mouseX = (e.clientX - rect.left) * scaleX;
-      this.mouseY = (e.clientY - rect.top) * scaleY;
-      this.isHovering = true;
-      this.draw();
+      if (
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom
+      ) {
+        const scaleX = this.width / rect.width;
+        const scaleY = this.height / rect.height;
+        this.mouseX = (e.clientX - rect.left) * scaleX;
+        this.mouseY = (e.clientY - rect.top) * scaleY;
+        this.isHovering = true;
+        this.draw();
+      } else if (this.isHovering) {
+        this.isHovering = false;
+        this.draw();
+      }
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (this.isLeftDragging) {
+        this.isLeftDragging = false;
+        this.updateCursor();
+      }
     });
   }
 }

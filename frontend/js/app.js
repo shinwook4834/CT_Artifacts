@@ -3,13 +3,13 @@
  * Dual-Mode: Uses FastAPI Backend (16GB RAM) if available, or 100% Client-Side Static if hosted on HF Static Space.
  */
 
-import { api } from "./api.js?v=2.0.8";
-import { LocalDicomLoader } from "./dicom-local.js?v=2.0.8";
-import { MedicalViewport } from "./viewport.js?v=2.0.8";
-import { ContourOverlay } from "./inspection.js?v=2.0.8";
-import { InspectionGlassComparator } from "./comparator.js?v=2.0.8";
-import { aiEngine } from "./onnx-mar.js?v=2.0.8";
-import { ProfileChart } from "./export-view.js?v=2.0.8";
+import { api } from "./api.js?v=2.0.9";
+import { LocalDicomLoader } from "./dicom-local.js?v=2.0.9";
+import { MedicalViewport } from "./viewport.js?v=2.0.9";
+import { ContourOverlay } from "./inspection.js?v=2.0.9";
+import { InspectionGlassComparator } from "./comparator.js?v=2.0.9";
+import { aiEngine } from "./onnx-mar.js?v=2.0.9";
+import { ProfileChart } from "./export-view.js?v=2.0.9";
 
 class AppState {
   constructor() {
@@ -308,18 +308,34 @@ function initPresets() {
     if (overlay) overlay.toggleArtifacts(this.classList.contains("active"));
   });
 
-  // Zoom In / Zoom Out / Reset buttons
-  document.getElementById("btn-zoom-in")?.addEventListener("click", () => {
-    if (viewport) viewport.zoomIn();
-  });
-
-  document.getElementById("btn-zoom-out")?.addEventListener("click", () => {
-    if (viewport) viewport.zoomOut();
+  // Zoom Out (-) / Reset (0) / Zoom In (+) controls for Step 2 and Step 3
+  document.querySelectorAll(".btn-zoom-out").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.closest("#step-3-container")) {
+        if (comparator) comparator.zoomOut();
+      } else {
+        if (viewport) viewport.zoomOut();
+      }
+    });
   });
 
   document.querySelectorAll(".btn-reset-zoom").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (viewport) viewport.resetZoom();
+      if (btn.closest("#step-3-container")) {
+        if (comparator) comparator.resetZoom();
+      } else {
+        if (viewport) viewport.resetZoom();
+      }
+    });
+  });
+
+  document.querySelectorAll(".btn-zoom-in").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.closest("#step-3-container")) {
+        if (comparator) comparator.zoomIn();
+      } else {
+        if (viewport) viewport.zoomIn();
+      }
     });
   });
 }
