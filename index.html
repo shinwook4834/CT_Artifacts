@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ChemoPort CT-MAR Studio</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🩺</text></svg>">
-  <link rel="stylesheet" href="./css/style.css?v=2.0.7">
+  <link rel="stylesheet" href="./css/style.css?v=2.0.8">
   <style>
     /* SPA Specific Additions & Cleanups */
     .app-header {
@@ -75,26 +75,56 @@
       top: 0;
       pointer-events: none;
     }
-    /* Unified Floating HUD Toolbar for Medical Canvas */
-    .hud-floating-bar {
+    /* Floating HUD Panels for Medical Viewports (Top-Left WL/WW & Presets, Top-Right Tools) */
+    .hud-panel {
       position: absolute;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      background: rgba(15, 23, 42, 0.88);
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      border-radius: 9999px;
-      padding: 4px 10px;
+      top: 12px;
       z-index: 40;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-      max-width: 96%;
-      white-space: nowrap;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      pointer-events: none;
+    }
+    .hud-top-left {
+      left: 12px;
+      align-items: flex-start;
+    }
+    .hud-top-right {
+      right: 12px;
+      align-items: flex-end;
+    }
+    .hud-wl-badge {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 9999px;
+      padding: 4px 12px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+      pointer-events: auto;
+      display: inline-flex;
+      align-items: center;
+    }
+    .badge-wl-display {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.74rem;
+      font-weight: 750;
+      color: #38bdf8;
+      letter-spacing: -0.2px;
       user-select: none;
+    }
+    .hud-pill-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 9999px;
+      padding: 3px 6px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+      pointer-events: auto;
     }
     .hud-pill-btn {
       background: rgba(255, 255, 255, 0.08);
@@ -129,14 +159,6 @@
       height: 14px;
       background: rgba(255, 255, 255, 0.22);
       margin: 0 3px;
-    }
-    .badge-wl-display {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: #38bdf8;
-      padding: 2px 4px;
-      user-select: none;
     }
     .hud-badge {
       background: rgba(15, 23, 42, 0.78);
@@ -349,21 +371,30 @@
 
       <!-- Canvas Viewport with Overlaid Floating HUD -->
       <div class="canvas-wrapper">
-        <!-- Unified Floating Pill HUD Bar Overlaid on Canvas -->
-        <div class="hud-floating-bar">
-          <span class="badge-wl-display">WL: 40 / WW: 350</span>
-          <div class="hud-divider"></div>
-          <button class="hud-pill-btn preset-soft active" title="Soft Tissue Window (40 / 350)">Soft</button>
-          <button class="hud-pill-btn preset-bone" title="Bone Window (400 / 1800)">Bone</button>
-          <button class="hud-pill-btn preset-lung" title="Lung Window (-600 / 1500)">Lung</button>
-          <button class="hud-pill-btn preset-metal" title="Metal Window (1200 / 4000)">Metal</button>
-          <div class="hud-divider"></div>
-          <button id="btn-toggle-port" class="hud-pill-btn active" title="Toggle ChemoPort Core Contour">Port</button>
-          <button id="btn-toggle-art" class="hud-pill-btn toggle-art active" title="Toggle Streak Artifact Contours">Streaks</button>
-          <div class="hud-divider"></div>
-          <button id="btn-zoom-in" class="hud-pill-btn" title="Zoom In (+25%)" style="font-weight: 700; padding: 2px 7px;">＋</button>
-          <button id="btn-zoom-out" class="hud-pill-btn" title="Zoom Out (-20%)" style="font-weight: 700; padding: 2px 7px;">－</button>
-          <button id="btn-reset-zoom" class="hud-pill-btn btn-reset-zoom" title="Reset Zoom & Pan to 1:1" style="font-size: 0.72rem;">↺ 1:1</button>
+        <!-- Top-Left HUD: WL/WW on 1st line, Presets on 2nd line -->
+        <div class="hud-panel hud-top-left">
+          <div class="hud-wl-badge">
+            <span class="badge-wl-display">WL: 40 / WW: 350</span>
+          </div>
+          <div class="hud-pill-group">
+            <button class="hud-pill-btn preset-soft active" title="Soft Tissue Window (40 / 350)">Soft</button>
+            <button class="hud-pill-btn preset-bone" title="Bone Window (400 / 1800)">Bone</button>
+            <button class="hud-pill-btn preset-lung" title="Lung Window (-600 / 1500)">Lung</button>
+            <button class="hud-pill-btn preset-metal" title="Metal Window (1200 / 4000)">Metal</button>
+          </div>
+        </div>
+
+        <!-- Top-Right HUD: Contours on 1st line, Zoom on 2nd line -->
+        <div class="hud-panel hud-top-right">
+          <div class="hud-pill-group">
+            <button id="btn-toggle-port" class="hud-pill-btn active" title="Toggle ChemoPort Core Contour">Port</button>
+            <button id="btn-toggle-art" class="hud-pill-btn toggle-art active" title="Toggle Streak Artifact Contours">Streaks</button>
+          </div>
+          <div class="hud-pill-group">
+            <button id="btn-zoom-in" class="hud-pill-btn" title="Zoom In (+25%)" style="font-weight: 700; padding: 2px 7px;">＋</button>
+            <button id="btn-zoom-out" class="hud-pill-btn" title="Zoom Out (-20%)" style="font-weight: 700; padding: 2px 7px;">－</button>
+            <button id="btn-reset-zoom" class="hud-pill-btn btn-reset-zoom" title="Reset Zoom & Pan to 1:1" style="font-size: 0.72rem;">↺ 1:1</button>
+          </div>
         </div>
 
         <!-- WebGL 16-bit CT Slice Viewport -->
@@ -404,17 +435,29 @@
 
       <!-- Canvas Comparator with Overlaid Glass & Preset Controls -->
       <div class="canvas-wrapper">
-        <div class="hud-floating-bar">
-          <span class="badge-wl-display">WL: 40 / WW: 350</span>
-          <div class="hud-divider"></div>
-          <button class="hud-pill-btn preset-soft active" title="Soft Tissue Window">Soft</button>
-          <button class="hud-pill-btn preset-bone" title="Bone Window">Bone</button>
-          <button class="hud-pill-btn preset-lung" title="Lung Window">Lung</button>
-          <div class="hud-divider"></div>
-          <button id="btn-toggle-glass" class="hud-pill-btn active" title="Toggle Inspection Glass">Glass</button>
-          <button class="hud-pill-btn btn-glass-size" data-size="80" title="Small Inspection Glass (80px)">S</button>
-          <button class="hud-pill-btn btn-glass-size active" data-size="160" title="Medium Inspection Glass (160px)">M</button>
-          <button class="hud-pill-btn btn-glass-size" data-size="240" title="Large Inspection Glass (240px)">L</button>
+        <!-- Top-Left HUD: WL/WW on 1st line, Presets on 2nd line -->
+        <div class="hud-panel hud-top-left">
+          <div class="hud-wl-badge">
+            <span class="badge-wl-display">WL: 40 / WW: 350</span>
+          </div>
+          <div class="hud-pill-group">
+            <button class="hud-pill-btn preset-soft active" title="Soft Tissue Window (40 / 350)">Soft</button>
+            <button class="hud-pill-btn preset-bone" title="Bone Window (400 / 1800)">Bone</button>
+            <button class="hud-pill-btn preset-lung" title="Lung Window (-600 / 1500)">Lung</button>
+            <button class="hud-pill-btn preset-metal" title="Metal Window (1200 / 4000)">Metal</button>
+          </div>
+        </div>
+
+        <!-- Top-Right HUD: Inspection Glass controls -->
+        <div class="hud-panel hud-top-right">
+          <div class="hud-pill-group">
+            <button id="btn-toggle-glass" class="hud-pill-btn active" title="Toggle Inspection Glass">Glass</button>
+          </div>
+          <div class="hud-pill-group">
+            <button class="hud-pill-btn btn-glass-size" data-size="80" title="Small Inspection Glass (80px)">S</button>
+            <button class="hud-pill-btn btn-glass-size active" data-size="160" title="Medium Inspection Glass (160px)">M</button>
+            <button class="hud-pill-btn btn-glass-size" data-size="240" title="Large Inspection Glass (240px)">L</button>
+          </div>
         </div>
         <canvas id="canvas-comparator"></canvas>
       </div>
@@ -471,6 +514,6 @@
   <!-- ONNX Runtime Web for Client GPU AI Inference -->
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
   <!-- Main Application Script (ES Module) -->
-  <script type="module" src="./js/app.js?v=2.0.7"></script>
+  <script type="module" src="./js/app.js?v=2.0.8"></script>
 </body>
 </html>

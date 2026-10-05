@@ -785,25 +785,56 @@ div[data-testid="stCustomComponentV1"] iframe,
 }
 
 
-/* Unified Floating HUD Toolbar for Medical Canvas */
-.hud-floating-bar {
+/* Floating HUD Panels for Medical Viewports (Top-Left WL/WW & Presets, Top-Right Tools) */
+.hud-panel {
   position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: rgba(15, 23, 42, 0.88);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 9999px;
-  padding: 4px 8px;
+  top: 12px;
   z-index: 40;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-  max-width: 96%;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+.hud-top-left {
+  left: 12px;
+  align-items: flex-start;
+}
+.hud-top-right {
+  right: 12px;
+  align-items: flex-end;
+}
+.hud-wl-badge {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 9999px;
+  padding: 4px 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+}
+.badge-wl-display {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.74rem;
+  font-weight: 750;
+  color: #38bdf8;
+  letter-spacing: -0.2px;
+  user-select: none;
+}
+.hud-pill-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 9999px;
+  padding: 3px 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
 }
 .hud-pill-btn {
   background: rgba(255, 255, 255, 0.08);
@@ -825,23 +856,17 @@ div[data-testid="stCustomComponentV1"] iframe,
   background: #0d9488;
   color: #ffffff;
   border-color: #0d9488;
+  box-shadow: 0 0 10px rgba(13, 148, 136, 0.5);
 }
 .hud-pill-btn.toggle-art.active {
   background: #f59e0b;
   border-color: #f59e0b;
   color: #ffffff;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
 }
 .hud-divider {
   width: 1px;
-  height: 15px;
+  height: 14px;
   background: rgba(255, 255, 255, 0.22);
   margin: 0 3px;
-}
-.badge-wl-display {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #38bdf8;
-  padding: 2px 4px;
-  user-select: none;
 }
