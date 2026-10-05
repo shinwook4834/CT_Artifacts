@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ChemoPort CT-MAR Studio</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🩺</text></svg>">
-  <link rel="stylesheet" href="./css/style.css?v=2.0.9">
+  <link rel="stylesheet" href="./css/style.css?v=2.1.0">
   <style>
     /* SPA Specific Additions & Cleanups */
     .app-header {
@@ -109,7 +109,7 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 0.74rem;
       font-weight: 750;
-      color: #38bdf8;
+      color: #ffffff;
       letter-spacing: -0.2px;
       user-select: none;
     }
@@ -465,8 +465,15 @@
         <canvas id="canvas-comparator"></canvas>
       </div>
 
-      <p style="text-align: center; color: #94a3b8; font-size: 0.8rem; margin: 12px 0 0 0;">
-        🔍 Hover over the image to inspect original corrupted CT inside the square glass window • －/0/＋ or Ctrl+Wheel to Zoom • Drag when zoomed to Pan
+      <!-- Slice navigation slider -->
+      <div style="display: flex; align-items: center; gap: 12px; margin-top: 16px; max-width: 512px; margin-left: auto; margin-right: auto;">
+        <span style="font-size: 0.8rem; font-weight: 700; color: #64748b;">Slice</span>
+        <input type="range" id="slice-slider-step3" min="0" max="235" value="125" style="flex: 1; accent-color: #0d9488;">
+        <span class="slice-indicator-text" style="font-size: 0.8rem; font-weight: 700; color: #0f172a; min-width: 90px; text-align: right;">Slice 126 / 236</span>
+      </div>
+
+      <p style="text-align: center; color: #94a3b8; font-size: 0.8rem; margin: 10px 0 0 0;">
+        💡 Wheel to change slice • Hover over image for inspection glass • －/0/＋ or Ctrl+Wheel to Zoom • Drag when zoomed to Pan
       </p>
     </div>
 
@@ -517,6 +524,6 @@
   <!-- ONNX Runtime Web for Client GPU AI Inference -->
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
   <!-- Main Application Script (ES Module) -->
-  <script type="module" src="./js/app.js?v=2.0.9"></script>
+  <script type="module" src="./js/app.js?v=2.1.0"></script>
 </body>
 </html>

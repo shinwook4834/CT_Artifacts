@@ -3,13 +3,13 @@
  * Dual-Mode: Uses FastAPI Backend (16GB RAM) if available, or 100% Client-Side Static if hosted on HF Static Space.
  */
 
-import { api } from "./api.js?v=2.0.9";
-import { LocalDicomLoader } from "./dicom-local.js?v=2.0.9";
-import { MedicalViewport } from "./viewport.js?v=2.0.9";
-import { ContourOverlay } from "./inspection.js?v=2.0.9";
-import { InspectionGlassComparator } from "./comparator.js?v=2.0.9";
-import { aiEngine } from "./onnx-mar.js?v=2.0.9";
-import { ProfileChart } from "./export-view.js?v=2.0.9";
+import { api } from "./api.js?v=2.1.0";
+import { LocalDicomLoader } from "./dicom-local.js?v=2.1.0";
+import { MedicalViewport } from "./viewport.js?v=2.1.0";
+import { ContourOverlay } from "./inspection.js?v=2.1.0";
+import { InspectionGlassComparator } from "./comparator.js?v=2.1.0";
+import { aiEngine } from "./onnx-mar.js?v=2.1.0";
+import { ProfileChart } from "./export-view.js?v=2.1.0";
 
 class AppState {
   constructor() {
@@ -207,17 +207,33 @@ function initViewports() {
   }
 
   if (canvasComp) {
-    comparator = new InspectionGlassComparator(canvasComp);
+    comparator = new InspectionGlassComparator(canvasComp, {
+      onSliceChange: (delta) => {
+        changeSlice(state.currentSliceIdx + delta);
+      },
+      onWindowLevelChange: (wc, ww) => {
+        state.wc = wc;
+        state.ww = ww;
+        if (viewport) viewport.setWindowLevel(wc, ww);
+        updateWlDisplay();
+      },
+    });
   }
 
   if (canvasProf) {
     profileChart = new ProfileChart(canvasProf);
   }
 
-  // Slice slider in step 2
+  // Slice sliders in Step 2 and Step 3
   const sliceSlider = document.getElementById("slice-slider");
   if (sliceSlider) {
     sliceSlider.addEventListener("input", (e) => {
+      changeSlice(parseInt(e.target.value, 10));
+    });
+  }
+  const sliceSlider3 = document.getElementById("slice-slider-step3");
+  if (sliceSlider3) {
+    sliceSlider3.addEventListener("input", (e) => {
       changeSlice(parseInt(e.target.value, 10));
     });
   }
@@ -228,9 +244,12 @@ async function changeSlice(newIdx) {
   const clamped = Math.max(0, Math.min(state.totalSlices - 1, newIdx));
   state.currentSliceIdx = clamped;
 
-  // Update slider & badges
+  // Update sliders & badges
   const slider = document.getElementById("slice-slider");
   if (slider) slider.value = clamped;
+  const slider3 = document.getElementById("slice-slider-step3");
+  if (slider3) slider3.value = clamped;
+
   document.querySelectorAll(".slice-indicator-text").forEach((el) => {
     el.innerText = `Slice ${clamped + 1} / ${state.totalSlices}`;
   });
@@ -249,6 +268,24 @@ async function changeSlice(newIdx) {
     if (overlay && state.contours[clamped]) {
       overlay.setContours(state.contours[clamped]);
       updateContourBadge(state.contours[clamped]);
+    }
+
+    // Step 3 Comparator slice update
+    if (comparator && state.currentStep === 3) {
+      let origHu = rawBuffer;
+      let reconHu = null;
+      if (state.localSlices && state.localSlices[clamped]) {
+        origHu = state.localSlices[clamped].hu;
+        reconHu = state.localSlices[clamped].reconHu || origHu.slice();
+      } else {
+        try {
+          reconHu = await api.getReconSlice(state.scanId, clamped);
+        } catch {
+          reconHu = origHu.slice();
+        }
+      }
+      comparator.setWindowLevel(state.wc, state.ww);
+      comparator.setSlices(origHu, reconHu);
     }
   } catch (err) {
     console.error("Slice load error:", err);
@@ -338,52 +375,58 @@ function initPresets() {
       }
     });
   });
-}
 
-async function loadStep2() {
-  if (!state.scanId) return;
-  const slider = document.getElementById("slice-slider");
-  if (slider) {
-    slider.max = state.totalSlices - 1;
-    slider.value = state.currentSliceIdx;
-  }
-  await changeSlice(state.currentSliceIdx);
-}
+  // Inspection glass controls (Step 3)
+  const btnToggleGlass = document.getElementById("btn-toggle-glass");
+  const glassSizeBtns = document.querySelectorAll(".btn-glass-size");
+  let lastGlassSize = 160;
 
-async function loadStep3() {
-  if (!state.scanId || !comparator) return;
-  const idx = state.currentSliceIdx;
-
-  try {
-    let origHu, reconHu;
-    if (state.localSlices && state.localSlices[idx]) {
-      origHu = state.localSlices[idx].hu;
-      reconHu = state.localSlices[idx].reconHu || origHu.slice();
+  btnToggleGlass?.addEventListener("click", function () {
+    const isCurrentlyActive = this.classList.contains("active");
+    if (isCurrentlyActive) {
+      // Turn OFF Glass: deselect Glass button AND deselect all S/M/L buttons
+      this.classList.remove("active");
+      glassSizeBtns.forEach((b) => b.classList.remove("active"));
+      if (comparator) comparator.toggleGlass(false);
     } else {
-      origHu = await api.getRawSlice(state.scanId, idx);
-      reconHu = await api.getReconSlice(state.scanId, idx);
-    }
-    comparator.setWindowLevel(state.wc, state.ww);
-    comparator.setSlices(origHu, reconHu);
-  } catch (err) {
-    console.error("Step 3 slice load error:", err);
-  }
-
-  // Inspection glass size controls
-  document.querySelectorAll(".btn-glass-size").forEach((btn) => {
-    btn.addEventListener("click", function () {
-      document.querySelectorAll(".btn-glass-size").forEach((b) => b.classList.remove("active"));
+      // Turn ON Glass: activate Glass button and activate previous size (default M)
       this.classList.add("active");
-      comparator.setGlassSize(parseInt(this.dataset.size, 10));
+      let matched = false;
+      glassSizeBtns.forEach((b) => {
+        if (parseInt(b.dataset.size, 10) === lastGlassSize) {
+          b.classList.add("active");
+          matched = true;
+        } else {
+          b.classList.remove("active");
+        }
+      });
+      if (!matched && glassSizeBtns.length > 0) {
+        glassSizeBtns[1].classList.add("active");
+        lastGlassSize = parseInt(glassSizeBtns[1].dataset.size, 10);
+      }
+      if (comparator) {
+        comparator.setGlassSize(lastGlassSize);
+        comparator.toggleGlass(true);
+      }
+    }
+  });
+
+  glassSizeBtns.forEach((btn) => {
+    btn.addEventListener("click", function () {
+      const size = parseInt(this.dataset.size, 10);
+      lastGlassSize = size;
+      // Selecting a size activates glass if it was off
+      btnToggleGlass?.classList.add("active");
+      glassSizeBtns.forEach((b) => b.classList.remove("active"));
+      this.classList.add("active");
+      if (comparator) {
+        comparator.setGlassSize(size);
+        comparator.toggleGlass(true);
+      }
     });
   });
 
-  document.getElementById("btn-toggle-glass")?.addEventListener("click", function () {
-    this.classList.toggle("active");
-    comparator.toggleGlass(this.classList.contains("active"));
-  });
-
-  // Run AI restoration button
+  // Run AI restoration button (initialized once)
   document.getElementById("btn-run-ai")?.addEventListener("click", async () => {
     const btn = document.getElementById("btn-run-ai");
     btn.disabled = true;
@@ -422,6 +465,41 @@ async function loadStep3() {
       btn.innerText = "▶️ Run AI Restoration";
     }
   });
+}
+
+async function loadStep2() {
+  if (!state.scanId) return;
+  const slider = document.getElementById("slice-slider");
+  if (slider) {
+    slider.max = state.totalSlices - 1;
+    slider.value = state.currentSliceIdx;
+  }
+  await changeSlice(state.currentSliceIdx);
+}
+
+async function loadStep3() {
+  if (!state.scanId || !comparator) return;
+  const slider3 = document.getElementById("slice-slider-step3");
+  if (slider3) {
+    slider3.max = state.totalSlices - 1;
+    slider3.value = state.currentSliceIdx;
+  }
+  const idx = state.currentSliceIdx;
+
+  try {
+    let origHu, reconHu;
+    if (state.localSlices && state.localSlices[idx]) {
+      origHu = state.localSlices[idx].hu;
+      reconHu = state.localSlices[idx].reconHu || origHu.slice();
+    } else {
+      origHu = await api.getRawSlice(state.scanId, idx);
+      reconHu = await api.getReconSlice(state.scanId, idx);
+    }
+    comparator.setWindowLevel(state.wc, state.ww);
+    comparator.setSlices(origHu, reconHu);
+  } catch (err) {
+    console.error("Step 3 slice load error:", err);
+  }
 }
 
 async function loadStep4() {

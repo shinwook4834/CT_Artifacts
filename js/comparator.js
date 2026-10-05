@@ -13,6 +13,9 @@ export class InspectionGlassComparator {
     this.canvas.width = this.width;
     this.canvas.height = this.height;
 
+    this.onSliceChange = options.onSliceChange || null;
+    this.onWindowLevelChange = options.onWindowLevelChange || null;
+
     // Offscreen rendering buffers
     this.offOrig = document.createElement("canvas");
     this.offOrig.width = this.width;
@@ -36,8 +39,11 @@ export class InspectionGlassComparator {
     this.panX = 0;
     this.panY = 0;
     this.isLeftDragging = false;
+    this.isRightDragging = false;
     this.dragStartX = 0;
     this.dragStartY = 0;
+    this.startWC = options.windowCenter || 40.0;
+    this.startWW = options.windowWidth || 350.0;
 
     // Window level
     this.wc = options.windowCenter || 40.0;
@@ -222,15 +228,21 @@ export class InspectionGlassComparator {
     this.canvas.addEventListener("mouseleave", () => {
       this.isHovering = false;
       this.isLeftDragging = false;
+      this.isRightDragging = false;
       this.updateCursor();
       this.draw();
     });
 
     this.canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
       if (e.ctrlKey || e.altKey || e.metaKey) {
-        e.preventDefault();
         const factor = e.deltaY < 0 ? 1.15 : 0.87;
         this.setZoom(this.zoom * factor);
+        return;
+      }
+      const delta = Math.sign(e.deltaY);
+      if (this.onSliceChange) {
+        this.onSliceChange(delta);
       }
     }, { passive: false });
 
@@ -238,13 +250,30 @@ export class InspectionGlassComparator {
       this.dragStartX = e.clientX;
       this.dragStartY = e.clientY;
 
-      if (e.button === 0 && (this.zoom > 1.001 || e.shiftKey)) {
+      if (e.button === 2) {
+        this.isRightDragging = true;
+        this.startWC = this.wc;
+        this.startWW = this.ww;
+      } else if (e.button === 0 && (this.zoom > 1.001 || e.shiftKey)) {
         this.isLeftDragging = true;
         this.updateCursor();
       }
     });
 
     window.addEventListener("mousemove", (e) => {
+      if (this.isRightDragging) {
+        const dx = e.clientX - this.dragStartX;
+        const dy = e.clientY - this.dragStartY;
+        this.ww = Math.max(1, this.startWW + dx * 2.5);
+        this.wc = this.startWC - dy * 2.0;
+        this.renderBuffers();
+        this.draw();
+        if (this.onWindowLevelChange) {
+          this.onWindowLevelChange(this.wc, this.ww);
+        }
+        return;
+      }
+
       if (this.isLeftDragging) {
         const dx = (e.clientX - this.dragStartX) / this.canvas.width;
         const dy = (e.clientY - this.dragStartY) / this.canvas.height;
@@ -280,6 +309,7 @@ export class InspectionGlassComparator {
     });
 
     window.addEventListener("mouseup", () => {
+      this.isRightDragging = false;
       if (this.isLeftDragging) {
         this.isLeftDragging = false;
         this.updateCursor();
