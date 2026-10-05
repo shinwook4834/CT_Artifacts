@@ -3,13 +3,13 @@
  * Dual-Mode: Uses FastAPI Backend (16GB RAM) if available, or 100% Client-Side Static if hosted on HF Static Space.
  */
 
-import { api } from "./api.js?v=2.1.0";
-import { LocalDicomLoader } from "./dicom-local.js?v=2.1.0";
-import { MedicalViewport } from "./viewport.js?v=2.1.0";
-import { ContourOverlay } from "./inspection.js?v=2.1.0";
-import { InspectionGlassComparator } from "./comparator.js?v=2.1.0";
-import { aiEngine } from "./onnx-mar.js?v=2.1.0";
-import { ProfileChart } from "./export-view.js?v=2.1.0";
+import { api } from "./api.js?v=2.1.2";
+import { LocalDicomLoader } from "./dicom-local.js?v=2.1.2";
+import { MedicalViewport } from "./viewport.js?v=2.1.2";
+import { ContourOverlay } from "./inspection.js?v=2.1.2";
+import { InspectionGlassComparator } from "./comparator.js?v=2.1.2";
+import { aiEngine } from "./onnx-mar.js?v=2.1.2";
+import { ProfileChart } from "./export-view.js?v=2.1.2";
 
 class AppState {
   constructor() {
@@ -237,6 +237,40 @@ function initViewports() {
       changeSlice(parseInt(e.target.value, 10));
     });
   }
+
+  // Card-level wheel navigation for Step 2 and Step 3 (full card coverage)
+  const bindCardWheel = (cardSelector) => {
+    const card = document.querySelector(cardSelector);
+    if (!card) return;
+    let accum = 0;
+    card.addEventListener("wheel", (e) => {
+      // Ignore if user is zooming with modifiers
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      // Ignore if scrolling on interactive form inputs
+      if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+
+      e.preventDefault();
+      let delta = e.deltaY;
+      if (e.deltaMode === 1) delta *= 28;
+      else if (e.deltaMode === 2) delta *= 500;
+
+      if (Math.abs(delta) >= 40) {
+        changeSlice(state.currentSliceIdx + Math.sign(delta));
+        accum = 0;
+        return;
+      }
+
+      accum += delta;
+      const step = Math.trunc(accum / 18);
+      if (step !== 0) {
+        accum -= step * 18;
+        changeSlice(state.currentSliceIdx + step);
+      }
+    }, { passive: false });
+  };
+
+  bindCardWheel("#step-2-container .viewer-card");
+  bindCardWheel("#step-3-container .viewer-card");
 }
 
 async function changeSlice(newIdx) {
@@ -254,24 +288,33 @@ async function changeSlice(newIdx) {
     el.innerText = `Slice ${clamped + 1} / ${state.totalSlices}`;
   });
 
-  // Fetch raw slice Int16 buffer and render on WebGL
+  // Fetch raw slice Int16 buffer
+  let rawBuffer = null;
   try {
-    let rawBuffer;
     if (state.localSlices && state.localSlices[clamped]) {
       rawBuffer = state.localSlices[clamped].hu;
     } else {
       rawBuffer = await api.getRawSlice(state.scanId, clamped);
     }
-    if (viewport) viewport.loadInt16Slice(rawBuffer);
+  } catch (err) {
+    console.error("Slice load error:", err);
+    return;
+  }
 
-    // Contours overlay
+  // Step 2: WebGL Viewport & Contours
+  try {
+    if (viewport) viewport.loadInt16Slice(rawBuffer);
     if (overlay && state.contours[clamped]) {
       overlay.setContours(state.contours[clamped]);
       updateContourBadge(state.contours[clamped]);
     }
+  } catch (err) {
+    console.warn("Step 2 render warning:", err);
+  }
 
-    // Step 3 Comparator slice update
-    if (comparator && state.currentStep === 3) {
+  // Step 3: Inspection Glass Comparator (always kept synchronized)
+  try {
+    if (comparator) {
       let origHu = rawBuffer;
       let reconHu = null;
       if (state.localSlices && state.localSlices[clamped]) {
@@ -288,7 +331,7 @@ async function changeSlice(newIdx) {
       comparator.setSlices(origHu, reconHu);
     }
   } catch (err) {
-    console.error("Slice load error:", err);
+    console.error("Step 3 slice comparator update error:", err);
   }
 }
 
@@ -484,22 +527,7 @@ async function loadStep3() {
     slider3.max = state.totalSlices - 1;
     slider3.value = state.currentSliceIdx;
   }
-  const idx = state.currentSliceIdx;
-
-  try {
-    let origHu, reconHu;
-    if (state.localSlices && state.localSlices[idx]) {
-      origHu = state.localSlices[idx].hu;
-      reconHu = state.localSlices[idx].reconHu || origHu.slice();
-    } else {
-      origHu = await api.getRawSlice(state.scanId, idx);
-      reconHu = await api.getReconSlice(state.scanId, idx);
-    }
-    comparator.setWindowLevel(state.wc, state.ww);
-    comparator.setSlices(origHu, reconHu);
-  } catch (err) {
-    console.error("Step 3 slice load error:", err);
-  }
+  await changeSlice(state.currentSliceIdx);
 }
 
 async function loadStep4() {

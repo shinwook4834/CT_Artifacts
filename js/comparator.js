@@ -21,11 +21,13 @@ export class InspectionGlassComparator {
     this.offOrig.width = this.width;
     this.offOrig.height = this.height;
     this.ctxOrig = this.offOrig.getContext("2d");
+    this.imgDataOrig = this.ctxOrig.createImageData(this.width, this.height);
 
     this.offRecon = document.createElement("canvas");
     this.offRecon.width = this.width;
     this.offRecon.height = this.height;
     this.ctxRecon = this.offRecon.getContext("2d");
+    this.imgDataRecon = this.ctxRecon.createImageData(this.width, this.height);
 
     // Glass settings
     this.glassEnabled = true;
@@ -33,6 +35,9 @@ export class InspectionGlassComparator {
     this.mouseX = this.width / 2;
     this.mouseY = this.height / 2;
     this.isHovering = false;
+
+    // Wheel navigation accumulator
+    this.accumWheel = 0;
 
     // Zoom & Pan settings
     this.zoom = 1.0;
@@ -125,13 +130,12 @@ export class InspectionGlassComparator {
     if (!this.origHu || !this.reconHu) return;
 
     // Render orig to offscreen
-    this.renderHuToCtx(this.origHu, this.ctxOrig);
+    this.renderHuToCtx(this.origHu, this.ctxOrig, this.imgDataOrig);
     // Render recon to offscreen
-    this.renderHuToCtx(this.reconHu, this.ctxRecon);
+    this.renderHuToCtx(this.reconHu, this.ctxRecon, this.imgDataRecon);
   }
 
-  renderHuToCtx(int16Array, ctx) {
-    const imgData = ctx.createImageData(this.width, this.height);
+  renderHuToCtx(int16Array, ctx, imgData) {
     const data = imgData.data;
     const lower = this.wc - this.ww * 0.5;
     const invWw = 255.0 / Math.max(1.0, this.ww);
@@ -233,18 +237,42 @@ export class InspectionGlassComparator {
       this.draw();
     });
 
-    this.canvas.addEventListener("wheel", (e) => {
+    const handleWheel = (e) => {
       e.preventDefault();
+      e.stopPropagation();
+
       if (e.ctrlKey || e.altKey || e.metaKey) {
         const factor = e.deltaY < 0 ? 1.15 : 0.87;
         this.setZoom(this.zoom * factor);
         return;
       }
-      const delta = Math.sign(e.deltaY);
-      if (this.onSliceChange) {
-        this.onSliceChange(delta);
+
+      let delta = e.deltaY;
+      if (e.deltaMode === 1) delta *= 28;
+      else if (e.deltaMode === 2) delta *= 500;
+
+      // Direct step for notched mouse wheels
+      if (Math.abs(delta) >= 40) {
+        const step = Math.sign(delta);
+        this.accumWheel = 0;
+        if (this.onSliceChange) this.onSliceChange(step);
+        return;
       }
-    }, { passive: false });
+
+      // Smooth accumulation for Mac trackpads and precision wheels
+      this.accumWheel += delta;
+      const PIXELS_PER_SLICE = 18;
+      const step = Math.trunc(this.accumWheel / PIXELS_PER_SLICE);
+      if (step !== 0) {
+        this.accumWheel -= step * PIXELS_PER_SLICE;
+        if (this.onSliceChange) this.onSliceChange(step);
+      }
+    };
+
+    this.canvas.addEventListener("wheel", handleWheel, { passive: false });
+    if (this.canvas.parentElement) {
+      this.canvas.parentElement.addEventListener("wheel", handleWheel, { passive: false });
+    }
 
     this.canvas.addEventListener("mousedown", (e) => {
       this.dragStartX = e.clientX;

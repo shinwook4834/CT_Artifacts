@@ -870,3 +870,9 @@ div[data-testid="stCustomComponentV1"] iframe,
   background: rgba(255, 255, 255, 0.22);
   margin: 0 3px;
 }
+
+.canvas-wrapper canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

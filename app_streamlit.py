@@ -2221,6 +2221,17 @@ if st.session_state.current_hu is not None:
               if (e.deltaMode === 1) delta *= 28;
               if (e.shiftKey) delta *= 4;
 
+              if (Math.abs(delta) >= 40) {{
+                const step = Math.sign(delta);
+                accum = 0;
+                drawSlice(current + step);
+                try {{
+                  sessionStorage.setItem('chemoport_active_slice', current.toString());
+                  window.parent.__chemoport_slice = current;
+                }} catch (err) {{}}
+                return;
+              }}
+
               accum += delta;
               const step = Math.trunc(accum / PIXELS_PER_SLICE);
               if (step !== 0) {{
@@ -3140,6 +3151,17 @@ if st.session_state.current_hu is not None:
               let delta = e.deltaY;
               if (e.deltaMode === 1) delta *= 28;
               if (e.shiftKey) delta *= 4;
+
+              if (Math.abs(delta) >= 40) {{
+                const step = Math.sign(delta);
+                accum = 0;
+                drawSlice(current + step);
+                try {{
+                  sessionStorage.setItem('chemoport_active_slice', current.toString());
+                  window.parent.__chemoport_slice = current;
+                }} catch (err) {{}}
+                return;
+              }}
 
               accum += delta;
               const step = Math.trunc(accum / PIXELS_PER_SLICE);

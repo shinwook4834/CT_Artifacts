@@ -30,6 +30,7 @@ export class MedicalViewport {
     this.dragStartY = 0;
     this.startWC = this.windowCenter;
     this.startWW = this.windowWidth;
+    this.accumWheel = 0;
 
     this.initWebGL();
     this.bindEvents();
@@ -240,20 +241,43 @@ export class MedicalViewport {
   bindEvents() {
     this.canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
-    this.canvas.addEventListener("wheel", (e) => {
+    const handleWheel = (e) => {
       e.preventDefault();
+      e.stopPropagation();
+
       // Trackpad pinch (ctrlKey) or Alt/Meta key triggers smooth zoom
       if (e.ctrlKey || e.altKey || e.metaKey) {
         const factor = e.deltaY < 0 ? 1.15 : 0.87;
         this.setZoom(this.zoom * factor);
         return;
       }
-      // Normal wheel changes slices
-      const delta = Math.sign(e.deltaY);
-      if (this.onSliceChange) {
-        this.onSliceChange(delta);
+
+      let delta = e.deltaY;
+      if (e.deltaMode === 1) delta *= 28;
+      else if (e.deltaMode === 2) delta *= 500;
+
+      // Direct step for notched mouse wheels
+      if (Math.abs(delta) >= 40) {
+        const step = Math.sign(delta);
+        this.accumWheel = 0;
+        if (this.onSliceChange) this.onSliceChange(step);
+        return;
       }
-    }, { passive: false });
+
+      // Smooth accumulation for Mac trackpads and precision wheels
+      this.accumWheel += delta;
+      const PIXELS_PER_SLICE = 18;
+      const step = Math.trunc(this.accumWheel / PIXELS_PER_SLICE);
+      if (step !== 0) {
+        this.accumWheel -= step * PIXELS_PER_SLICE;
+        if (this.onSliceChange) this.onSliceChange(step);
+      }
+    };
+
+    this.canvas.addEventListener("wheel", handleWheel, { passive: false });
+    if (this.canvas.parentElement) {
+      this.canvas.parentElement.addEventListener("wheel", handleWheel, { passive: false });
+    }
 
     this.canvas.addEventListener("mousedown", (e) => {
       this.dragStartX = e.clientX;
