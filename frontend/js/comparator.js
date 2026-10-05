@@ -30,7 +30,7 @@ export class InspectionGlassComparator {
     this.imgDataRecon = this.ctxRecon.createImageData(this.width, this.height);
 
     // Glass settings
-    this.glassEnabled = true;
+    this.glassEnabled = false;
     this.glassSize = 160; // px
     this.mouseX = this.width / 2;
     this.mouseY = this.height / 2;

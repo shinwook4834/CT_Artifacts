@@ -1484,12 +1484,12 @@ if st.session_state.current_hu is not None:
 
                 <!-- Top-Right: Inspection Glass (S, M, L) -->
                 <div class="hud-glass-overlay">
-                  <div id="hud-glass-badge-single" class="hud-glass-text active" title="Click to toggle Glass ON/OFF">
+                  <div id="hud-glass-badge-single" class="hud-glass-text" title="Click to toggle Glass ON/OFF">
                     Glass
                   </div>
                   <div class="hud-presets-row">
                     <button type="button" class="hud-glass-btn" data-size="75" title="Small (75px) - Local focus">S</button>
-                    <button type="button" class="hud-glass-btn active" data-size="160" title="Medium (160px) - Regional focus">M</button>
+                    <button type="button" class="hud-glass-btn" data-size="160" title="Medium (160px) - Regional focus">M</button>
                     <button type="button" class="hud-glass-btn" data-size="240" title="Large (240px) - Wide focus">L</button>
                   </div>
                 </div>
@@ -1543,7 +1543,7 @@ if st.session_state.current_hu is not None:
             let currentPreset = 'soft';
 
             // RTP Inspection Glass State
-            let glassActive = true;
+            let glassActive = false;
             let glassSize = 160;
             let glassPos = {{ x: 256, y: 256 }};
             let isHovering = false;

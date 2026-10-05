@@ -3,13 +3,13 @@
  * Dual-Mode: Uses FastAPI Backend (16GB RAM) if available, or 100% Client-Side Static if hosted on HF Static Space.
  */
 
-import { api } from "./api.js?v=2.1.2";
-import { LocalDicomLoader } from "./dicom-local.js?v=2.1.2";
-import { MedicalViewport } from "./viewport.js?v=2.1.2";
-import { ContourOverlay } from "./inspection.js?v=2.1.2";
-import { InspectionGlassComparator } from "./comparator.js?v=2.1.2";
-import { aiEngine } from "./onnx-mar.js?v=2.1.2";
-import { ProfileChart } from "./export-view.js?v=2.1.2";
+import { api } from "./api.js?v=2.1.3";
+import { LocalDicomLoader } from "./dicom-local.js?v=2.1.3";
+import { MedicalViewport } from "./viewport.js?v=2.1.3";
+import { ContourOverlay } from "./inspection.js?v=2.1.3";
+import { InspectionGlassComparator } from "./comparator.js?v=2.1.3";
+import { aiEngine } from "./onnx-mar.js?v=2.1.3";
+import { ProfileChart } from "./export-view.js?v=2.1.3";
 
 class AppState {
   constructor() {
