@@ -191,14 +191,18 @@ export class InspectionGlassComparator {
 
       // Glass inner shadow & border
       ctx.save();
-      ctx.strokeStyle = "#f43f5e";
+      ctx.strokeStyle = "#0d9488";
       ctx.lineWidth = 2.5;
+      ctx.shadowColor = "rgba(13, 148, 136, 0.35)";
+      ctx.shadowBlur = 6;
       ctx.beginPath();
       ctx.roundRect(x, y, this.glassSize, this.glassSize, 14);
       ctx.stroke();
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
 
       // Corner brackets & center reticle
-      ctx.strokeStyle = "rgba(244, 63, 94, 0.75)";
+      ctx.strokeStyle = "rgba(13, 148, 136, 0.85)";
       ctx.lineWidth = 1.5;
       const cx = x + half;
       const cy = y + half;
@@ -208,7 +212,7 @@ export class InspectionGlassComparator {
       ctx.stroke();
 
       // Glass HUD Badge
-      ctx.fillStyle = "rgba(244, 63, 94, 0.9)";
+      ctx.fillStyle = "#0d9488";
       ctx.font = "bold 11px -apple-system, sans-serif";
       const badgeText = "ORIGINAL CT";
       const textW = ctx.measureText(badgeText).width;

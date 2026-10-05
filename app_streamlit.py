@@ -1696,7 +1696,7 @@ if st.session_state.current_hu is not None:
                 ctx.save();
                 ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
                 ctx.shadowBlur = 8;
-                ctx.strokeStyle = '#14b8a6';
+                ctx.strokeStyle = '#0d9488';
                 ctx.lineWidth = 2;
                 ctx.strokeRect(gLeft, gTop, gW, gH);
 
@@ -1735,7 +1735,7 @@ if st.session_state.current_hu is not None:
                 const tagX = gLeft + (gW - tagW) / 2;
                 const tagY = gTop - (isSmall ? 18 : 20) < 4 ? gTop + 4 : gTop - (isSmall ? 18 : 20);
 
-                ctx.fillStyle = 'rgba(244, 63, 94, 0.92)';
+                ctx.fillStyle = 'rgba(13, 148, 136, 0.95)';
                 ctx.beginPath();
                 if (ctx.roundRect) {{
                   ctx.roundRect(tagX, tagY, tagW, tagH, 4);
