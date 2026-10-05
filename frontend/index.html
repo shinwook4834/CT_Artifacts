@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ChemoPort CT-MAR Studio</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🩺</text></svg>">
-  <link rel="stylesheet" href="./css/style.css?v=2.0.6">
+  <link rel="stylesheet" href="./css/style.css?v=2.0.7">
   <style>
     /* SPA Specific Additions & Cleanups */
     .app-header {
@@ -75,15 +75,69 @@
       top: 0;
       pointer-events: none;
     }
-    .hud-overlay {
+    /* Unified Floating HUD Toolbar for Medical Canvas */
+    .hud-floating-bar {
       position: absolute;
-      top: 12px;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
       display: flex;
-      gap: 6px;
-      z-index: 10;
+      align-items: center;
+      gap: 4px;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 9999px;
+      padding: 4px 10px;
+      z-index: 40;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      max-width: 96%;
+      white-space: nowrap;
+      user-select: none;
     }
-    .hud-left { left: 12px; }
-    .hud-right { right: 12px; }
+    .hud-pill-btn {
+      background: rgba(255, 255, 255, 0.08);
+      color: #cbd5e1;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 9999px;
+      padding: 3px 8px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .hud-pill-btn:hover {
+      background: rgba(255, 255, 255, 0.22);
+      color: #ffffff;
+    }
+    .hud-pill-btn.active {
+      background: #0d9488;
+      color: #ffffff;
+      border-color: #0d9488;
+      box-shadow: 0 0 10px rgba(13, 148, 136, 0.5);
+    }
+    .hud-pill-btn.toggle-art.active {
+      background: #f59e0b;
+      border-color: #f59e0b;
+      color: #ffffff;
+      box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+    }
+    .hud-divider {
+      width: 1px;
+      height: 14px;
+      background: rgba(255, 255, 255, 0.22);
+      margin: 0 3px;
+    }
+    .badge-wl-display {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #38bdf8;
+      padding: 2px 4px;
+      user-select: none;
+    }
     .hud-badge {
       background: rgba(15, 23, 42, 0.78);
       backdrop-filter: blur(12px);
@@ -94,27 +148,6 @@
       font-weight: 700;
       border: 1px solid rgba(255, 255, 255, 0.15);
       user-select: none;
-    }
-    .hud-btn {
-      background: rgba(15, 23, 42, 0.72);
-      backdrop-filter: blur(12px);
-      color: #cbd5e1;
-      padding: 5px 10px;
-      border-radius: 9999px;
-      font-size: 0.75rem;
-      font-weight: 600;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-    .hud-btn:hover, .hud-btn.active {
-      background: #0d9488;
-      color: #ffffff;
-      border-color: #0d9488;
-    }
-    .btn-toggle.active {
-      background: #0d9488;
-      color: #ffffff;
     }
     .nav-row {
       display: flex;
@@ -314,24 +347,25 @@
         </div>
       </div>
 
-      <!-- Sleek Control Toolbar above Canvas (Zero Collision) -->
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; max-width: 512px; margin-left: auto; margin-right: auto; gap: 8px;">
-        <div style="display: flex; gap: 5px; align-items: center;">
-          <span class="hud-badge badge-wl-display" style="background: #0f172a; color: #f8fafc; font-size: 0.74rem;">WL: 40 / WW: 350</span>
-          <button class="hud-btn preset-soft active" style="font-size: 0.74rem;">Soft</button>
-          <button class="hud-btn preset-bone" style="font-size: 0.74rem;">Bone</button>
-          <button class="hud-btn preset-lung" style="font-size: 0.74rem;">Lung</button>
-          <button class="hud-btn preset-metal" style="font-size: 0.74rem;">Metal</button>
-        </div>
-        <div style="display: flex; gap: 5px; align-items: center;">
-          <button id="btn-toggle-port" class="hud-btn active" style="font-size: 0.74rem;">ChemoPort</button>
-          <button id="btn-toggle-art" class="hud-btn active" style="font-size: 0.74rem;">Artifacts</button>
-          <button class="hud-btn btn-reset-zoom" style="font-size: 0.74rem;">↺ Reset</button>
-        </div>
-      </div>
-
-      <!-- Canvas Viewport with Overlays -->
+      <!-- Canvas Viewport with Overlaid Floating HUD -->
       <div class="canvas-wrapper">
+        <!-- Unified Floating Pill HUD Bar Overlaid on Canvas -->
+        <div class="hud-floating-bar">
+          <span class="badge-wl-display">WL: 40 / WW: 350</span>
+          <div class="hud-divider"></div>
+          <button class="hud-pill-btn preset-soft active" title="Soft Tissue Window (40 / 350)">Soft</button>
+          <button class="hud-pill-btn preset-bone" title="Bone Window (400 / 1800)">Bone</button>
+          <button class="hud-pill-btn preset-lung" title="Lung Window (-600 / 1500)">Lung</button>
+          <button class="hud-pill-btn preset-metal" title="Metal Window (1200 / 4000)">Metal</button>
+          <div class="hud-divider"></div>
+          <button id="btn-toggle-port" class="hud-pill-btn active" title="Toggle ChemoPort Core Contour">Port</button>
+          <button id="btn-toggle-art" class="hud-pill-btn toggle-art active" title="Toggle Streak Artifact Contours">Streaks</button>
+          <div class="hud-divider"></div>
+          <button id="btn-zoom-in" class="hud-pill-btn" title="Zoom In (+25%)" style="font-weight: 700; padding: 2px 7px;">＋</button>
+          <button id="btn-zoom-out" class="hud-pill-btn" title="Zoom Out (-20%)" style="font-weight: 700; padding: 2px 7px;">－</button>
+          <button id="btn-reset-zoom" class="hud-pill-btn btn-reset-zoom" title="Reset Zoom & Pan to 1:1" style="font-size: 0.72rem;">↺ 1:1</button>
+        </div>
+
         <!-- WebGL 16-bit CT Slice Viewport -->
         <canvas id="canvas-viewport"></canvas>
         <!-- 2D Vector Overlay for Contours -->
@@ -346,7 +380,7 @@
       </div>
 
       <p style="text-align: center; color: #94a3b8; font-size: 0.8rem; margin: 10px 0 0 0;">
-        💡 Mouse wheel to change slices • Left drag to pan • Right drag for real-time GPU Window/Level
+        💡 Wheel to change slice • ＋/－ or Ctrl+Wheel to Zoom • Drag when zoomed to Pan • Right-drag for GPU Window/Level
       </p>
     </div>
 
@@ -368,24 +402,20 @@
         <button id="btn-run-ai" class="btn-primary" style="padding: 6px 18px; font-size: 0.85rem;">▶️ Run AI Restoration</button>
       </div>
 
-      <!-- Sleek Control Toolbar above Canvas (Zero Collision) -->
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; max-width: 512px; margin-left: auto; margin-right: auto; gap: 8px;">
-        <div style="display: flex; gap: 5px; align-items: center;">
-          <span class="hud-badge badge-wl-display" style="background: #0f172a; color: #f8fafc; font-size: 0.74rem;">WL: 40 / WW: 350</span>
-          <button class="hud-btn preset-soft active" style="font-size: 0.74rem;">Soft</button>
-          <button class="hud-btn preset-bone" style="font-size: 0.74rem;">Bone</button>
-          <button class="hud-btn preset-lung" style="font-size: 0.74rem;">Lung</button>
-        </div>
-        <div style="display: flex; gap: 5px; align-items: center;">
-          <button id="btn-toggle-glass" class="hud-btn active" style="font-size: 0.74rem;">Glass</button>
-          <button class="hud-btn btn-glass-size" data-size="80" style="font-size: 0.74rem;">S</button>
-          <button class="hud-btn btn-glass-size active" data-size="160" style="font-size: 0.74rem;">M</button>
-          <button class="hud-btn btn-glass-size" data-size="240" style="font-size: 0.74rem;">L</button>
-        </div>
-      </div>
-
-      <!-- Canvas Comparator with Inspection Glass -->
+      <!-- Canvas Comparator with Overlaid Glass & Preset Controls -->
       <div class="canvas-wrapper">
+        <div class="hud-floating-bar">
+          <span class="badge-wl-display">WL: 40 / WW: 350</span>
+          <div class="hud-divider"></div>
+          <button class="hud-pill-btn preset-soft active" title="Soft Tissue Window">Soft</button>
+          <button class="hud-pill-btn preset-bone" title="Bone Window">Bone</button>
+          <button class="hud-pill-btn preset-lung" title="Lung Window">Lung</button>
+          <div class="hud-divider"></div>
+          <button id="btn-toggle-glass" class="hud-pill-btn active" title="Toggle Inspection Glass">Glass</button>
+          <button class="hud-pill-btn btn-glass-size" data-size="80" title="Small Inspection Glass (80px)">S</button>
+          <button class="hud-pill-btn btn-glass-size active" data-size="160" title="Medium Inspection Glass (160px)">M</button>
+          <button class="hud-pill-btn btn-glass-size" data-size="240" title="Large Inspection Glass (240px)">L</button>
+        </div>
         <canvas id="canvas-comparator"></canvas>
       </div>
 
@@ -441,6 +471,6 @@
   <!-- ONNX Runtime Web for Client GPU AI Inference -->
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
   <!-- Main Application Script (ES Module) -->
-  <script type="module" src="./js/app.js?v=2.0.6"></script>
+  <script type="module" src="./js/app.js?v=2.0.7"></script>
 </body>
 </html>

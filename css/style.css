@@ -784,3 +784,64 @@ div[data-testid="stCustomComponentV1"] iframe,
   user-select: none;
 }
 
+
+/* Unified Floating HUD Toolbar for Medical Canvas */
+.hud-floating-bar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+  padding: 4px 8px;
+  z-index: 40;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  max-width: 96%;
+  white-space: nowrap;
+}
+.hud-pill-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.hud-pill-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+.hud-pill-btn.active {
+  background: #0d9488;
+  color: #ffffff;
+  border-color: #0d9488;
+}
+.hud-pill-btn.toggle-art.active {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #ffffff;
+}
+.hud-divider {
+  width: 1px;
+  height: 15px;
+  background: rgba(255, 255, 255, 0.22);
+  margin: 0 3px;
+}
+.badge-wl-display {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #38bdf8;
+  padding: 2px 4px;
+  user-select: none;
+}

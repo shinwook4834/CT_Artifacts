@@ -21,6 +21,7 @@ export class MedicalViewport {
     // Callbacks
     this.onWindowLevelChange = options.onWindowLevelChange || null;
     this.onSliceChange = options.onSliceChange || null;
+    this.onTransformChange = options.onTransformChange || null;
 
     // Interaction state
     this.isRightDragging = false;
@@ -32,6 +33,7 @@ export class MedicalViewport {
 
     this.initWebGL();
     this.bindEvents();
+    this.updateCursor();
   }
 
   initWebGL() {
@@ -188,11 +190,51 @@ export class MedicalViewport {
     }
   }
 
+  zoomIn() {
+    this.setZoom(this.zoom * 1.25);
+  }
+
+  zoomOut() {
+    this.setZoom(this.zoom / 1.25);
+  }
+
+  setZoom(newZoom) {
+    const clamped = Math.max(1.0, Math.min(5.0, newZoom));
+    this.zoom = clamped;
+    if (this.zoom <= 1.001) {
+      this.zoom = 1.0;
+      this.panX = 0;
+      this.panY = 0;
+    } else {
+      const maxPan = 0.5 * (1.0 - 1.0 / this.zoom) + 0.15;
+      this.panX = Math.max(-maxPan, Math.min(maxPan, this.panX));
+      this.panY = Math.max(-maxPan, Math.min(maxPan, this.panY));
+    }
+    this.updateCursor();
+    this.render();
+    if (this.onTransformChange) {
+      this.onTransformChange(this.zoom, this.panX, this.panY);
+    }
+  }
+
   resetZoom() {
     this.zoom = 1.0;
     this.panX = 0;
     this.panY = 0;
+    this.updateCursor();
     this.render();
+    if (this.onTransformChange) {
+      this.onTransformChange(this.zoom, this.panX, this.panY);
+    }
+  }
+
+  updateCursor() {
+    if (!this.canvas) return;
+    if (this.zoom > 1.001) {
+      this.canvas.style.cursor = this.isLeftDragging ? "grabbing" : "grab";
+    } else {
+      this.canvas.style.cursor = "crosshair";
+    }
   }
 
   bindEvents() {
@@ -200,6 +242,13 @@ export class MedicalViewport {
 
     this.canvas.addEventListener("wheel", (e) => {
       e.preventDefault();
+      // Trackpad pinch (ctrlKey) or Alt/Meta key triggers smooth zoom
+      if (e.ctrlKey || e.altKey || e.metaKey) {
+        const factor = e.deltaY < 0 ? 1.15 : 0.87;
+        this.setZoom(this.zoom * factor);
+        return;
+      }
+      // Normal wheel changes slices
       const delta = Math.sign(e.deltaY);
       if (this.onSliceChange) {
         this.onSliceChange(delta);
@@ -216,6 +265,7 @@ export class MedicalViewport {
         this.startWW = this.windowWidth;
       } else if (e.button === 0) {
         this.isLeftDragging = true;
+        this.updateCursor();
       }
     });
 
@@ -229,20 +279,28 @@ export class MedicalViewport {
         if (this.onWindowLevelChange) {
           this.onWindowLevelChange(this.windowCenter, this.windowWidth);
         }
-      } else if (this.isLeftDragging && e.shiftKey) {
+      } else if (this.isLeftDragging && (this.zoom > 1.001 || e.shiftKey)) {
         const dx = (e.clientX - this.dragStartX) / this.canvas.width;
         const dy = (e.clientY - this.dragStartY) / this.canvas.height;
-        this.panX += dx / this.zoom;
-        this.panY -= dy / this.zoom;
+        this.panX += dx;
+        this.panY += dy;
+        const maxPan = 0.5 * (1.0 - 1.0 / this.zoom) + 0.15;
+        this.panX = Math.max(-maxPan, Math.min(maxPan, this.panX));
+        this.panY = Math.max(-maxPan, Math.min(maxPan, this.panY));
+
         this.dragStartX = e.clientX;
         this.dragStartY = e.clientY;
         this.render();
+        if (this.onTransformChange) {
+          this.onTransformChange(this.zoom, this.panX, this.panY);
+        }
       }
     });
 
     window.addEventListener("mouseup", () => {
       this.isRightDragging = false;
       this.isLeftDragging = false;
+      this.updateCursor();
     });
 
     this.canvas.addEventListener("dblclick", () => this.resetZoom());

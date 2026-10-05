@@ -3,13 +3,13 @@
  * Dual-Mode: Uses FastAPI Backend (16GB RAM) if available, or 100% Client-Side Static if hosted on HF Static Space.
  */
 
-import { api } from "./api.js?v=2.0.6";
-import { LocalDicomLoader } from "./dicom-local.js?v=2.0.6";
-import { MedicalViewport } from "./viewport.js?v=2.0.6";
-import { ContourOverlay } from "./inspection.js?v=2.0.6";
-import { InspectionGlassComparator } from "./comparator.js?v=2.0.6";
-import { aiEngine } from "./onnx-mar.js?v=2.0.6";
-import { ProfileChart } from "./export-view.js?v=2.0.6";
+import { api } from "./api.js?v=2.0.7";
+import { LocalDicomLoader } from "./dicom-local.js?v=2.0.7";
+import { MedicalViewport } from "./viewport.js?v=2.0.7";
+import { ContourOverlay } from "./inspection.js?v=2.0.7";
+import { InspectionGlassComparator } from "./comparator.js?v=2.0.7";
+import { aiEngine } from "./onnx-mar.js?v=2.0.7";
+import { ProfileChart } from "./export-view.js?v=2.0.7";
 
 class AppState {
   constructor() {
@@ -196,6 +196,9 @@ function initViewports() {
       onSliceChange: (delta) => {
         changeSlice(state.currentSliceIdx + delta);
       },
+      onTransformChange: (zoom, panX, panY) => {
+        if (overlay) overlay.setTransform(zoom, panX, panY);
+      },
     });
   }
 
@@ -283,6 +286,8 @@ function initPresets() {
   Object.entries(presets).forEach(([id, [wc, ww]]) => {
     document.querySelectorAll(`.${id}`).forEach((btn) => {
       btn.addEventListener("click", () => {
+        document.querySelectorAll(".preset-soft, .preset-bone, .preset-lung, .preset-metal, .preset-all").forEach((b) => b.classList.remove("active"));
+        document.querySelectorAll(`.${id}`).forEach((b) => b.classList.add("active"));
         state.wc = wc;
         state.ww = ww;
         if (viewport) viewport.setWindowLevel(wc, ww);
@@ -303,7 +308,15 @@ function initPresets() {
     if (overlay) overlay.toggleArtifacts(this.classList.contains("active"));
   });
 
-  // Reset zoom button
+  // Zoom In / Zoom Out / Reset buttons
+  document.getElementById("btn-zoom-in")?.addEventListener("click", () => {
+    if (viewport) viewport.zoomIn();
+  });
+
+  document.getElementById("btn-zoom-out")?.addEventListener("click", () => {
+    if (viewport) viewport.zoomOut();
+  });
+
   document.querySelectorAll(".btn-reset-zoom").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (viewport) viewport.resetZoom();
