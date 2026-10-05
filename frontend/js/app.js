@@ -3,13 +3,13 @@
  * Dual-Mode: Uses FastAPI Backend (16GB RAM) if available, or 100% Client-Side Static if hosted on HF Static Space.
  */
 
-import { api } from "./api.js?v=2.1.3";
-import { LocalDicomLoader } from "./dicom-local.js?v=2.1.3";
-import { MedicalViewport } from "./viewport.js?v=2.1.3";
-import { ContourOverlay } from "./inspection.js?v=2.1.3";
-import { InspectionGlassComparator } from "./comparator.js?v=2.1.3";
-import { aiEngine } from "./onnx-mar.js?v=2.1.3";
-import { ProfileChart } from "./export-view.js?v=2.1.3";
+import { api } from "./api.js?v=2.1.4";
+import { LocalDicomLoader } from "./dicom-local.js?v=2.1.4";
+import { MedicalViewport } from "./viewport.js?v=2.1.4";
+import { ContourOverlay } from "./inspection.js?v=2.1.4";
+import { InspectionGlassComparator } from "./comparator.js?v=2.1.4";
+import { aiEngine } from "./onnx-mar.js?v=2.1.4";
+import { ProfileChart } from "./export-view.js?v=2.1.4";
 
 class AppState {
   constructor() {
@@ -341,9 +341,10 @@ function updateContourBadge(cnt) {
   if (cnt && cnt.port && cnt.port.length > 0) {
     badge.innerText = `🩺 ChemoPort: ${cnt.port_px || 0} px • Artifacts: ${cnt.art_px || 0} px`;
     badge.style.color = "#0d9488";
+    badge.style.display = "inline-flex";
   } else {
-    badge.innerText = "Normal CT Anatomy";
-    badge.style.color = "#64748b";
+    badge.innerText = "";
+    badge.style.display = "none";
   }
 }
 

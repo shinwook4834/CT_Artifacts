@@ -2810,11 +2810,12 @@ if st.session_state.current_hu is not None:
                 if (sliceContours && sliceContours.port && sliceContours.port.length > 0) {{
                   const pPx = sliceContours.port_px || 0;
                   const aPx = sliceContours.art_px || 0;
+                  statusBadge.style.display = 'inline-flex';
                   statusBadge.innerHTML = `<span style="color:#f43f5e;font-size:0.9em;">●</span> ChemoPort: ${{pPx}} px &nbsp; <span style="color:#f59e0b;font-size:0.9em;">●</span> Artifacts: ${{aPx}} px`;
                   statusBadge.className = 'apple-pill pill-port-active';
                 }} else {{
-                  statusBadge.innerHTML = `<span style="color:#10b981;font-size:0.9em;">✓</span> Normal CT Anatomy`;
-                  statusBadge.className = 'apple-pill pill-normal-anatomy';
+                  statusBadge.style.display = 'none';
+                  statusBadge.innerHTML = '';
                 }}
               }}
             }}
