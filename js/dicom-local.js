@@ -47,33 +47,20 @@ export class LocalDicomLoader {
       throw new Error("No valid CT DICOM slices could be parsed from the selected files.");
     }
 
-    // Sort slices by InstanceNumber
-    slices.sort((a, b) => a.instanceNumber - b.instanceNumber);
+    // Sort slices by SliceLocation (Z-axis) or InstanceNumber
+    slices.sort((a, b) => {
+      if (a.sliceLocation !== undefined && b.sliceLocation !== undefined && a.sliceLocation !== b.sliceLocation) {
+        return a.sliceLocation - b.sliceLocation;
+      }
+      return a.instanceNumber - b.instanceNumber;
+    });
 
-    // Auto-detect ChemoPort slice (slice with highest anterior metal pixels > 1500 HU)
-    let bestIdx = 0;
-    let maxMetal = -1;
-    for (let idx = 0; idx < slices.length; idx++) {
-      const hu = slices[idx].hu;
-      let metalCount = 0;
-      // Anterior half search (rows 0 to 280)
-      for (let r = 50; r < 280; r++) {
-        for (let c = 100; c < 412; c++) {
-          if (hu[r * 512 + c] > 1500) metalCount++;
-        }
-      }
-      if (metalCount > maxMetal) {
-        maxMetal = metalCount;
-        bestIdx = idx;
-      }
-    }
+    // Auto-detect ChemoPort slice and 3D spatial anchor across both Right & Left hemispheres
+    const { bestIdx, anchor } = LocalDicomLoader.findSeriesChemoPortAnchor(slices);
 
-    // Extract quick contours for active slices
-    const contoursMap = slices.map((sl, idx) => {
-      if (Math.abs(idx - bestIdx) <= 12) {
-        return LocalDicomLoader.extractContours(sl.hu);
-      }
-      return { port: [], art: [], port_px: 0, art_px: 0 };
+    // Extract robust vector contours for all slices
+    const contoursMap = slices.map((sl) => {
+      return LocalDicomLoader.extractContours(sl.hu, anchor);
     });
 
     return {
@@ -148,6 +135,16 @@ export class LocalDicomLoader {
     const spacing = pixelSpacingStr ? pixelSpacingStr.split("\\").map(parseFloat) : [0.976, 0.976];
     const thickness = dataSet.floatString("x00180050") || 2.5;
 
+    // Slice Location or Image Position Patient Z
+    const imagePositionStr = dataSet.string("x00200032");
+    let sliceLoc = dataSet.floatString("x00201041");
+    if (sliceLoc === undefined && imagePositionStr) {
+      const parts = imagePositionStr.split("\\").map(parseFloat);
+      if (parts.length >= 3 && !isNaN(parts[2])) {
+        sliceLoc = parts[2];
+      }
+    }
+
     // Find PixelData element
     const pixelDataElement = dataSet.elements.x7fe00010;
     if (!pixelDataElement) return null;
@@ -171,6 +168,7 @@ export class LocalDicomLoader {
       rows,
       cols,
       instanceNumber: instanceNum,
+      sliceLocation: sliceLoc,
       seriesDescription: seriesDesc,
       pixelSpacing: spacing,
       sliceThickness: thickness,
@@ -183,58 +181,268 @@ export class LocalDicomLoader {
     };
   }
 
-  static extractContours(huArray) {
-    let portPoints = [];
-    let artPoints = [];
-    let portPx = 0;
-    let artPx = 0;
+  static findSeriesChemoPortAnchor(slices) {
+    let bestIdx = Math.floor(slices.length / 2);
+    let bestScore = -Infinity;
+    let anchor = null;
 
-    // Scan for metal cluster (> 1500 HU)
-    let sumX = 0, sumY = 0, count = 0;
-    for (let y = 120; y < 240; y++) {
-      for (let x = 270; x < 400; x++) {
-        if (huArray[y * 512 + x] > 1500) {
-          sumX += x;
-          sumY += y;
-          count++;
+    for (let idx = 0; idx < slices.length; idx++) {
+      const hu = slices[idx].hu;
+      const comp = LocalDicomLoader.findChemoPortComponent(hu, null);
+      if (comp && comp.score > bestScore) {
+        bestScore = comp.score;
+        bestIdx = idx;
+        anchor = { x: comp.cx, y: comp.cy };
+      }
+    }
+
+    return { bestIdx, anchor };
+  }
+
+  static findChemoPortComponent(huArray, anchor = null) {
+    const w = 512;
+    const metalCoords = [];
+
+    const yStart = anchor ? Math.max(30, Math.floor(anchor.y - 50)) : 40;
+    const yEnd = anchor ? Math.min(320, Math.ceil(anchor.y + 50)) : 310;
+    const xStart = anchor ? Math.max(50, Math.floor(anchor.x - 50)) : 60;
+    const xEnd = anchor ? Math.min(460, Math.ceil(anchor.x + 50)) : 452;
+
+    const threshold = anchor ? 1600 : 1800;
+
+    for (let y = yStart; y < yEnd; y++) {
+      const rowOffset = y * w;
+      for (let x = xStart; x < xEnd; x++) {
+        const val = huArray[rowOffset + x];
+        if (val >= threshold) {
+          metalCoords.push({ x, y, val });
         }
       }
     }
 
-    if (count > 20) {
-      portPx = count;
+    if (metalCoords.length === 0) return null;
+
+    // Connected Component Analysis (8-connectivity)
+    const coordMap = new Map();
+    for (let i = 0; i < metalCoords.length; i++) {
+      const p = metalCoords[i];
+      coordMap.set(p.y * w + p.x, i);
+    }
+
+    const visited = new Uint8Array(metalCoords.length);
+    const clusters = [];
+
+    for (let i = 0; i < metalCoords.length; i++) {
+      if (visited[i]) continue;
+      const cluster = [];
+      const queue = [i];
+      visited[i] = 1;
+      let sumX = 0;
+      let sumY = 0;
+      let maxHu = -Infinity;
+
+      let head = 0;
+      while (head < queue.length) {
+        const currIdx = queue[head++];
+        const pt = metalCoords[currIdx];
+        cluster.push(pt);
+        sumX += pt.x;
+        sumY += pt.y;
+        if (pt.val > maxHu) maxHu = pt.val;
+
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const nx = pt.x + dx;
+            const ny = pt.y + dy;
+            const nKey = ny * w + nx;
+            if (coordMap.has(nKey)) {
+              const nIdx = coordMap.get(nKey);
+              if (!visited[nIdx]) {
+                visited[nIdx] = 1;
+                queue.push(nIdx);
+              }
+            }
+          }
+        }
+      }
+
+      const count = cluster.length;
       const cx = sumX / count;
       const cy = sumY / count;
+      clusters.push({ cluster, count, cx, cy, maxHu });
+    }
 
-      // Elliptical port contour
-      const rx = 24;
-      const ry = 16;
-      for (let deg = 0; deg < 360; deg += 15) {
-        const rad = (deg * Math.PI) / 180;
-        const px = cx + rx * Math.cos(rad);
-        const py = cy + ry * Math.sin(rad);
-        portPoints.push([Math.round(px), Math.round(py)]);
+    let bestCluster = null;
+    let bestScore = -Infinity;
+
+    for (const c of clusters) {
+      if (c.count < 4 || c.count > 1500) continue;
+
+      const distMidline = Math.abs(c.cx - 256);
+
+      let score = c.maxHu * 1.5 + Math.min(c.count, 250) * 12.0;
+      if (c.maxHu >= 2400) score += 6000;
+      if (distMidline > 20) score += 3000;
+      if (c.cy < 265) score += 2000;
+      if (distMidline < 12) score -= 4000;
+
+      if (anchor) {
+        const dAnchor = Math.hypot(c.cx - anchor.x, c.cy - anchor.y);
+        if (dAnchor > 55) continue;
+        score -= dAnchor * 50.0;
       }
 
-      // Radiating streak artifacts (simulated polar vectors along beam angle)
-      artPx = count * 3;
-      for (let angle of [-42, -25, 25, 42, 138, 155]) {
-        const rad = (angle * Math.PI) / 180;
-        const streak = [];
-        for (let r = 25; r <= 140; r += 15) {
-          streak.push([Math.round(cx + r * Math.cos(rad)), Math.round(cy + r * Math.sin(rad))]);
-        }
-        for (let r = 140; r >= 25; r -= 15) {
-          streak.push([Math.round(cx + r * Math.cos(rad) + 4), Math.round(cy + r * Math.sin(rad) + 4)]);
-        }
-        artPoints.push(streak);
+      c.score = score;
+      if (score > bestScore) {
+        bestScore = score;
+        bestCluster = c;
       }
+    }
+
+    return bestCluster;
+  }
+
+  static tracePortContour(cluster, cx, cy) {
+    const set = new Set();
+    for (const p of cluster) {
+      set.add(p.y * 512 + p.x);
+    }
+
+    const numAngles = 36;
+    const rawRadii = new Float32Array(numAngles);
+
+    for (let a = 0; a < numAngles; a++) {
+      const deg = a * (360 / numAngles);
+      const rad = (deg * Math.PI) / 180;
+      const cosA = Math.cos(rad);
+      const sinA = Math.sin(rad);
+
+      let maxR = 0;
+      for (let r = 1.0; r <= 42.0; r += 0.75) {
+        const qx = Math.round(cx + r * cosA);
+        const qy = Math.round(cy + r * sinA);
+        if (set.has(qy * 512 + qx)) {
+          maxR = r;
+        }
+      }
+      rawRadii[a] = maxR;
+    }
+
+    for (let a = 0; a < numAngles; a++) {
+      if (rawRadii[a] <= 0) {
+        let prevVal = 0, nextVal = 0;
+        for (let step = 1; step < numAngles; step++) {
+          const prevIdx = (a - step + numAngles) % numAngles;
+          if (rawRadii[prevIdx] > 0 && !prevVal) prevVal = rawRadii[prevIdx];
+          const nextIdx = (a + step) % numAngles;
+          if (rawRadii[nextIdx] > 0 && !nextVal) nextVal = rawRadii[nextIdx];
+          if (prevVal && nextVal) break;
+        }
+        rawRadii[a] = (prevVal && nextVal) ? (prevVal + nextVal) / 2 : (prevVal || nextVal || 6);
+      }
+    }
+
+    const smoothedRadii = new Float32Array(numAngles);
+    for (let a = 0; a < numAngles; a++) {
+      const prev = rawRadii[(a - 1 + numAngles) % numAngles];
+      const curr = rawRadii[a];
+      const next = rawRadii[(a + 1) % numAngles];
+      smoothedRadii[a] = 0.25 * prev + 0.5 * curr + 0.25 * next + 1.8;
+    }
+
+    const polygon = [];
+    for (let a = 0; a < numAngles; a++) {
+      const deg = a * (360 / numAngles);
+      const rad = (deg * Math.PI) / 180;
+      const r = smoothedRadii[a];
+      const px = Math.round(cx + r * Math.cos(rad));
+      const py = Math.round(cy + r * Math.sin(rad));
+      polygon.push([px, py]);
+    }
+
+    return polygon;
+  }
+
+  static detectStreaks(huArray, cx, cy, portRadius = 15) {
+    const numRays = 72;
+    const rayScores = new Float32Array(numRays);
+    const rayMaxR = new Float32Array(numRays);
+
+    for (let a = 0; a < numRays; a++) {
+      const deg = a * (360 / numRays);
+      const rad = (deg * Math.PI) / 180;
+      const cosA = Math.cos(rad);
+      const sinA = Math.sin(rad);
+
+      let darkCount = 0;
+      let brightCount = 0;
+      let maxStreakR = portRadius + 20;
+
+      for (let r = portRadius + 5; r <= 150; r += 3) {
+        const qx = Math.round(cx + r * cosA);
+        const qy = Math.round(cy + r * sinA);
+        if (qx < 10 || qx >= 502 || qy < 10 || qy >= 502) break;
+
+        const val = huArray[qy * 512 + qx];
+        if (val < -160 && val > -850) {
+          darkCount++;
+          maxStreakR = Math.max(maxStreakR, r);
+        } else if (val > 250 && val < 1700) {
+          brightCount++;
+          maxStreakR = Math.max(maxStreakR, r);
+        }
+      }
+
+      rayScores[a] = darkCount * 1.5 + brightCount;
+      rayMaxR[a] = maxStreakR;
+    }
+
+    const streaks = [];
+    for (let a = 0; a < numRays; a++) {
+      const prev = rayScores[(a - 1 + numRays) % numRays];
+      const curr = rayScores[a];
+      const next = rayScores[(a + 1) % numRays];
+
+      if (curr >= 4 && curr >= prev && curr >= next) {
+        const deg = a * (360 / numRays);
+        const r = Math.min(150, Math.max(50, rayMaxR[a] + 10));
+        const rad1 = ((deg - 2.5) * Math.PI) / 180;
+        const rad2 = ((deg + 2.5) * Math.PI) / 180;
+        const rStart = portRadius + 4;
+
+        const poly = [
+          [Math.round(cx + rStart * Math.cos(rad1)), Math.round(cy + rStart * Math.sin(rad1))],
+          [Math.round(cx + r * Math.cos(rad1)), Math.round(cy + r * Math.sin(rad1))],
+          [Math.round(cx + r * Math.cos(rad2)), Math.round(cy + r * Math.sin(rad2))],
+          [Math.round(cx + rStart * Math.cos(rad2)), Math.round(cy + rStart * Math.sin(rad2))],
+        ];
+        streaks.push(poly);
+      }
+    }
+
+    return streaks;
+  }
+
+  static extractContours(huArray, anchor = null) {
+    const comp = LocalDicomLoader.findChemoPortComponent(huArray, anchor);
+    if (!comp || comp.count < 4) {
+      return { port: [], art: [], port_px: 0, art_px: 0 };
+    }
+
+    const { cluster, cx, cy, count } = comp;
+    const portPoly = LocalDicomLoader.tracePortContour(cluster, cx, cy);
+    const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy);
+
+    let artPx = 0;
+    for (const s of streaks) {
+      artPx += 45;
     }
 
     return {
-      port: portPoints.length > 0 ? [portPoints] : [],
-      art: artPoints,
-      port_px: portPx,
+      port: portPoly && portPoly.length >= 3 ? [portPoly] : [],
+      art: streaks,
+      port_px: count,
       art_px: artPx,
     };
   }

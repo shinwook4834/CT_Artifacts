@@ -114,25 +114,36 @@ def detect_catheter_wire(
         catheter_mask: Binary boolean mask of detected catheter wire.
     """
     h, w = hu_array.shape
-    y_min, y_max, x_min, x_max = 145, 225, 325, 390
+    cy, cx = port_center
+
+    if cx < w / 2.0:
+        # Patient Right chest wall (Image Left): catheter travels towards internal jugular/subclavian vein (medial & cranial)
+        y_min, y_max = max(0, int(cy - 45)), min(h, int(cy + 45))
+        x_min, x_max = max(0, int(cx - 30)), min(w, int(cx + 65))
+        p1 = np.array([cy - 20.0, cx + 5.0])
+        p2 = np.array([cy + 25.0, cx + 45.0])
+    else:
+        # Patient Left chest wall (Image Right)
+        y_min, y_max = max(0, int(cy - 45)), min(h, int(cy + 45))
+        x_min, x_max = max(0, int(cx - 10)), min(w, int(cx + 65))
+        p1 = np.array([cy - 26.5, cx + 9.0])
+        p2 = np.array([cy + 23.5, cx + 49.0])
+
     Y_sub, X_sub = np.meshgrid(np.arange(y_min, y_max), np.arange(x_min, x_max), indexing="ij")
 
-    # Anatomical corridor: from port connection (160, 338) to subclavian vein (210, 378)
-    p1 = np.array([160.0, 338.0])
-    p2 = np.array([210.0, 378.0])
     line_vec = p2 - p1
     line_len = np.linalg.norm(line_vec)
-    line_unit = line_vec / line_len
+    line_unit = line_vec / max(line_len, 1e-5)
 
     pts = np.stack([Y_sub, X_sub], axis=-1)
     proj = np.sum((pts - p1) * line_unit, axis=-1)
     closest = p1 + np.clip(proj, -5.0, line_len + 5.0)[..., None] * line_unit
     dist_corridor_sub = np.linalg.norm(pts - closest, axis=-1)
-    dist_port_sub = np.sqrt((Y_sub - port_center[0]) ** 2 + (X_sub - port_center[1]) ** 2)
+    dist_port_sub = np.sqrt((Y_sub - cy) ** 2 + (X_sub - cx) ** 2)
 
     hu_sub = hu_array[y_min:y_max, x_min:x_max]
     cand_sub = (hu_sub >= 850.0) & (dist_corridor_sub <= 7.0) & (dist_port_sub >= 10.0)
-    stem_sub = (hu_sub >= 750.0) & (dist_corridor_sub <= 5.0) & (dist_port_sub < 15.0) & (Y_sub < port_center[0])
+    stem_sub = (hu_sub >= 750.0) & (dist_corridor_sub <= 5.0) & (dist_port_sub < 15.0) & (Y_sub < cy)
 
     num, lbl, stats, _ = cv2.connectedComponentsWithStats(cand_sub.astype(np.uint8))
     catheter_mask = np.zeros((h, w), dtype=bool)
@@ -167,20 +178,43 @@ def estimate_port_pose_and_geometry(
     h, w = hu_array.shape
     dy_mm, dx_mm = float(pixel_spacing[0]), float(pixel_spacing[1])
 
-    # Anterior thorax ChemoPort implantation pocket in standard axial CT
+    # Dynamic ChemoPort cluster localization (Right or Left anterior thoracic wall)
     Y, X = np.ogrid[:h, :w]
-    pocket = (Y >= 140) & (Y <= 235) & (X >= 270) & (X <= 390)
+    cand_metal = (hu_array >= 1800.0) & (Y < int(0.58 * h))
+    num_cand, lbls_cand, stats_cand, cents_cand = cv2.connectedComponentsWithStats(cand_metal.astype(np.uint8))
+    best_c_idx = -1
+    best_score = -1.0
+    for i in range(1, num_cand):
+        cx_i, cy_i = cents_cand[i]
+        area_i = stats_cand[i, cv2.CC_STAT_AREA]
+        if abs(cx_i - w / 2.0) < 0.03 * w:
+            continue
+        if area_i < 4 or area_i > 1500:
+            continue
+        peak_hu_i = float(np.max(hu_array[lbls_cand == i]))
+        score_i = peak_hu_i + min(area_i, 200) * 10.0
+        if score_i > best_score:
+            best_score = score_i
+            best_c_idx = i
 
-    # Core metal check: authentic titanium port has peak HU >= 10,000 (or >= 3000 for synthetic CT)
+    if best_c_idx > 0:
+        c_y, c_x = float(cents_cand[best_c_idx][1]), float(cents_cand[best_c_idx][0])
+        dist_dyn = np.sqrt((Y - c_y) ** 2 + (X - c_x) ** 2)
+        pocket = dist_dyn <= 42.0
+    else:
+        c_y, c_x = 186.5, 329.0
+        pocket = (Y >= 140) & (Y <= 235) & (X >= 270) & (X <= 390)
+
+    # Core metal check: authentic titanium port has peak HU >= 10,000 (or >= 2500 for synthetic CT)
     max_in_pocket = float(np.max(hu_array[pocket])) if np.any(pocket) else 0.0
-    if max_in_pocket < 3000.0:
+    if max_in_pocket < 2500.0:
         return None
 
     # 1. Decouple catheter wire from main port body
-    catheter_mask = detect_catheter_wire(hu_array, port_center=(186.5, 329.0))
+    catheter_mask = detect_catheter_wire(hu_array, port_center=(c_y, c_x))
     port_metal = (hu_array >= 1800.0) & pocket & (~catheter_mask)
-    dist_c = np.sqrt((Y - 186.5) ** 2 + (X - 329.0) ** 2)
-    port_metal &= (dist_c <= 28.0)
+    dist_c = np.sqrt((Y - c_y) ** 2 + (X - c_x) ** 2)
+    port_metal &= (dist_c <= 32.0)
 
     if np.sum(port_metal) < 8:
         # Fallback to connected metal

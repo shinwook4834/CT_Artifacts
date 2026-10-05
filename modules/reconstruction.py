@@ -282,35 +282,38 @@ def find_chemoport_slice_index(slices) -> int:
 
     for idx, item in enumerate(slices):
         hu = item[1] if isinstance(item, (tuple, list)) else item
-        metal_mask = hu >= 2500.0
-        if not np.any(metal_mask):
+        cand = hu >= 1800.0
+        if not np.any(cand):
             scores.append(-1.0)
             continue
 
-        ys, xs = np.where(metal_mask)
-        mean_y = float(np.mean(ys))
-        mean_x = float(np.mean(xs))
-        max_hu = float(np.max(hu))
-        metal_count = int(np.sum(metal_mask))
-        metal_extreme = int(np.sum(hu >= 15000.0))
-
         h, w = hu.shape
-        is_anterior = mean_y < (0.52 * h)
-        is_lateral = abs(mean_x - (w / 2.0)) > (0.05 * w)
-        rel_pos = idx / total_slices
-        in_torso = (0.18 <= rel_pos <= 0.85) if total_slices > 30 else True
+        num_c, lbls, stats, centroids = cv2.connectedComponentsWithStats(cand.astype(np.uint8))
+        slice_best_score = -1.0
+        for i in range(1, num_c):
+            cx, cy = centroids[i]
+            area = stats[i, cv2.CC_STAT_AREA]
+            if cy >= 0.58 * h or cy < 0.08 * h:
+                continue
+            if cx < 0.1 * w or cx > 0.9 * w:
+                continue
+            if abs(cx - w / 2.0) < 0.03 * w:
+                continue
+            if area < 4 or area > 1500:
+                continue
+            peak_hu = float(np.max(hu[lbls == i]))
+            comp_score = peak_hu * 1.5 + min(area, 250) * 10.0
+            if peak_hu >= 2400.0:
+                comp_score += 5000.0
+            if abs(cx - w / 2.0) > 0.05 * w:
+                comp_score += 3000.0
+            rel_pos = idx / total_slices
+            if total_slices > 30 and (0.15 <= rel_pos <= 0.85):
+                comp_score += 3000.0
+            if comp_score > slice_best_score:
+                slice_best_score = comp_score
 
-        score = max_hu
-        if is_anterior:
-            score += 10000.0
-        if is_lateral:
-            score += 3000.0
-        if in_torso:
-            score += 5000.0
-
-        score += metal_extreme * 100.0
-        score += min(metal_count, 200) * 10.0
-        scores.append(score)
+        scores.append(slice_best_score)
 
     best_idx = int(np.argmax(scores))
     if scores[best_idx] < 0:

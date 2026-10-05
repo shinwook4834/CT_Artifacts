@@ -87,22 +87,38 @@ def detect_approach_a_slice_contours(
     port_mask = np.zeros((h, w), dtype=bool)
     has_port = False
 
-    for i in range(1, num_l):
-        cx, cy = centroids[i]
-        area = stats_l[i, cv2.CC_STAT_AREA]
-
-        # Anterior chest wall constraint
-        if cy >= 0.62 * h:
-            continue
-
-        if port_anchor is not None:
-            anchor_y, anchor_x = port_anchor
+    if port_anchor is not None:
+        anchor_y, anchor_x = port_anchor
+        for i in range(1, num_l):
+            cx, cy = centroids[i]
+            area = stats_l[i, cv2.CC_STAT_AREA]
+            if cy >= 0.62 * h:
+                continue
             d_anchor = np.sqrt((cy - anchor_y) ** 2 + (cx - anchor_x) ** 2)
             if d_anchor > max_anchor_dist_px:
                 continue
-
-        if area >= 4:
-            port_mask |= (labels == i)
+            if area >= 4:
+                port_mask |= (labels == i)
+                has_port = True
+    else:
+        best_i = -1
+        best_sc = -1.0
+        for i in range(1, num_l):
+            cx, cy = centroids[i]
+            area = stats_l[i, cv2.CC_STAT_AREA]
+            if cy >= 0.58 * h:
+                continue
+            if abs(cx - w / 2.0) < 0.03 * w:
+                continue
+            if area < 4 or area > 1500:
+                continue
+            peak = float(np.max(hu_slice[labels == i]))
+            sc = peak * 1.5 + min(area, 250) * 10.0
+            if sc > best_sc:
+                best_sc = sc
+                best_i = i
+        if best_i > 0:
+            port_mask |= (labels == best_i)
             has_port = True
 
     # If titanium core (>=1800 HU) is absent on this boundary slice,
@@ -334,10 +350,39 @@ def detect_series_inspection_contours(
         from modules.reconstruction import find_chemoport_slice_index
         best_idx = find_chemoport_slice_index(slices_list)
         best_hu = slices_list[best_idx][1] if isinstance(slices_list[best_idx], (tuple, list)) else slices_list[best_idx]
-        m_best = best_hu >= 2000.0
-        if np.any(m_best):
-            ys, xs = np.where(m_best)
-            port_anchor = (float(np.mean(ys)), float(np.mean(xs)))
+        h, w = best_hu.shape
+        cand_metal = (best_hu >= 1800.0)
+        num_c, lbls, stats, centroids = cv2.connectedComponentsWithStats(cand_metal.astype(np.uint8))
+        best_comp_idx = -1
+        best_score = -1.0
+        for i in range(1, num_c):
+            cx, cy = centroids[i]
+            area = stats[i, cv2.CC_STAT_AREA]
+            if cy >= 0.58 * h or cy < 0.08 * h:
+                continue
+            if cx < 0.1 * w or cx > 0.9 * w:
+                continue
+            if abs(cx - w / 2.0) < 0.03 * w:
+                continue
+            if area < 4 or area > 1500:
+                continue
+            peak_hu = float(np.max(best_hu[lbls == i]))
+            score = peak_hu * 1.5 + min(area, 250) * 10.0
+            if peak_hu >= 2400.0:
+                score += 5000.0
+            if abs(cx - w / 2.0) > 0.06 * w:
+                score += 3000.0
+            if score > best_score:
+                best_score = score
+                best_comp_idx = i
+
+        if best_comp_idx > 0:
+            port_anchor = (float(centroids[best_comp_idx][1]), float(centroids[best_comp_idx][0]))
+        else:
+            m_best = best_hu >= 2000.0
+            if np.any(m_best):
+                ys, xs = np.where(m_best)
+                port_anchor = (float(np.mean(ys)), float(np.mean(xs)))
 
             # Contiguously trace the exact 3D physical body of the ChemoPort along the Z-axis
             z_min_metal = best_idx
