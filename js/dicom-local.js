@@ -58,10 +58,12 @@ export class LocalDicomLoader {
     // Auto-detect ChemoPort slice and 3D spatial anchor across both Right & Left hemispheres
     const { bestIdx, anchor } = LocalDicomLoader.findSeriesChemoPortAnchor(slices);
 
+    const thickness = slices[0].sliceThickness || 2.5;
+
     // Extract robust B. Braun Celsite CAD vector contours for all slices
     const contoursMap = slices.map((sl, idx) => {
       const ps = sl.pixelSpacing ? sl.pixelSpacing[0] : (slices[0].pixelSpacing ? slices[0].pixelSpacing[0] : 1.0);
-      return LocalDicomLoader.extractContours(sl.hu, anchor, ps, idx, bestIdx);
+      return LocalDicomLoader.extractContours(sl.hu, anchor, ps, idx, bestIdx, thickness);
     });
 
     return {
@@ -627,23 +629,25 @@ export class LocalDicomLoader {
     return streaks;
   }
 
-  static extractContours(huArray, anchor = null, pixelSpacing = 1.0, sliceIdx = null, bestIdx = null) {
+  static extractContours(huArray, anchor = null, pixelSpacing = 1.0, sliceIdx = null, bestIdx = null, sliceThickness = 2.5) {
+    // Physical Celsite port thickness is 12 mm; with 2.5 mm slice thickness that corresponds to +/- 4 slices (9 slices total)
+    const maxSliceDist = Math.max(2, Math.round(10.0 / (sliceThickness || 2.5)));
     const isPortSlice = (sliceIdx !== null && bestIdx !== null)
-      ? Math.abs(sliceIdx - bestIdx) <= 12
+      ? Math.abs(sliceIdx - bestIdx) <= maxSliceDist
       : true;
 
-    // Detect ChemoPort component or use series anchor
+    // Detect ChemoPort component or fallback
     const comp = LocalDicomLoader.findChemoPortComponent(huArray, anchor);
     let portCenter = null;
     let portPx = 0;
 
-    if (comp && comp.count >= 4 && comp.maxHu >= 1800) {
+    if (anchor && isPortSlice) {
+      // Rock-solid stationary anchor across all port slices (prevents up/down jitter during slice navigation)
+      portCenter = { x: anchor.x, y: anchor.y };
+      portPx = comp ? comp.count : 80;
+    } else if (comp && comp.count >= 4 && comp.maxHu >= 1800) {
       portCenter = { x: comp.cx, y: comp.cy };
       portPx = comp.count;
-    } else if (anchor && isPortSlice) {
-      // Stable continuous ChemoPort anchor across intermediate slices regardless of HU dropouts
-      portCenter = { x: anchor.x, y: anchor.y };
-      portPx = 50;
     }
 
     if (!portCenter || !isPortSlice) {
