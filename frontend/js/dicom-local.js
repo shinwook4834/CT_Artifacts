@@ -322,83 +322,103 @@ export class LocalDicomLoader {
   /**
    * Generates exact 2D vector contours based on the official B. Braun Celsite® CAD blueprint
    * (PDF 6050179 & Brochure & specimen photo IMG_4763.JPG).
-   *
-   * Dimensions: 32 mm Length x 27 mm Width x 12.5 mm Height
-   * Septum Diameter: Ø 12.2 mm, Titanium Chamber Outer Diameter: Ø 14.8 mm
-   * Suture Wings with Eyelets Ø 2.0 mm, Outflow Cannula Ø 2.2 mm
+  /**
+   * Generates exact anatomical cross-section contours of the B. Braun Celsite® port
+   * on the Axial CT plane (matching user specification and clinical implantation anatomy).
+   * 
+   * Anatomical orientation:
+   * - Flat base plate seated flush against deep pectoral muscle wall.
+   * - Silicone septum dome elevated on anterior superficial face, DIRECTLY FACING SKIN
+   *   to accept Huber needle puncture from the anterior skin surface.
+   * - Outflow cannula exiting medially towards the subclavian vein catheter.
+   * - Low-profile nose tapering laterally into subcutaneous fat tissue.
    */
   static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true) {
     const pxScale = 1.0 / (pixelSpacing || 1.0);
-    // Longitudinal axis angle: nose vector points away from medial vein into lateral pectoral pocket
-    const angleDeg = isLeftHemisphere ? 198.5 : 341.5;
-    const rad = (angleDeg * Math.PI) / 180.0;
-    const cosA = Math.cos(rad);
-    const sinA = Math.sin(rad);
+    const theta = (26.5 * Math.PI) / 180.0;
 
-    // Coordinate basis: +V along angleDeg (nose), +U perpendicular (suture wings)
-    const vx = cosA, vy = sinA;
-    const ux = -sinA, uy = cosA;
+    // Basis vectors for axial cross-section:
+    // Tangent (tx, ty): along chest wall towards medial (subclavian vein entry)
+    // Normal (nx, ny): perpendicular towards anterior chest skin (ny < 0, superficial needle entry)
+    let tx, ty, nx, ny;
+    if (isLeftHemisphere) {
+      tx = -Math.cos(theta);
+      ty = -Math.sin(theta);
+      nx = Math.sin(theta);
+      ny = -Math.cos(theta);
+    } else {
+      tx = Math.cos(theta);
+      ty = -Math.sin(theta);
+      nx = -Math.sin(theta);
+      ny = -Math.cos(theta);
+    }
 
     const transformPt = (uMm, vMm) => {
       const uPx = uMm * pxScale;
       const vPx = vMm * pxScale;
       return [
-        Math.round(cx + uPx * ux + vPx * vx),
-        Math.round(cy + uPx * uy + vPx * vy),
+        Math.round(cx + uPx * tx + vPx * nx),
+        Math.round(cy + uPx * ty + vPx * ny),
       ];
     };
 
-    // 1. Outer Epoxy Housing (Parametric Delta Teardrop Profile)
-    const housingPoly = [];
-    // Apex nose arc (radius 4.8 mm, center at (0, 11.2))
-    const nNose = 12;
-    for (let i = 0; i <= nNose; i++) {
-      const deg = 35.0 + (110.0 * i) / nNose;
-      const r = (deg * Math.PI) / 180.0;
-      housingPoly.push(transformPt(4.8 * Math.cos(r), 11.2 + 4.8 * Math.sin(r)));
-    }
-    // Left flank to left suture wing (radius 3.6 mm, center at (-10.0, -9.2))
-    const nWing = 12;
-    for (let i = 0; i <= nWing; i++) {
-      const deg = 145.0 + (110.0 * i) / nWing;
-      const r = (deg * Math.PI) / 180.0;
-      housingPoly.push(transformPt(-10.0 + 3.6 * Math.cos(r), -9.2 + 3.6 * Math.sin(r)));
-    }
-    // Base notch (outflow indentation around cannula exit)
-    housingPoly.push(transformPt(-4.2, -12.6));
-    housingPoly.push(transformPt(-1.5, -13.2));
-    housingPoly.push(transformPt(0.0, -13.2));
-    housingPoly.push(transformPt(1.5, -13.2));
-    housingPoly.push(transformPt(4.2, -12.6));
-    // Right wing arc (radius 3.6 mm, center at (10.0, -9.2))
-    for (let i = 0; i <= nWing; i++) {
-      const deg = 285.0 + (110.0 * i) / nWing;
-      const r = (deg * Math.PI) / 180.0;
-      housingPoly.push(transformPt(10.0 + 3.6 * Math.cos(r), -9.2 + 3.6 * Math.sin(r)));
-    }
+    const uNose = -14.0;
+    const uBase = 10.0;
+    const rCh = 7.4;  // 14.8mm outer dia
+    const rSep = 6.1; // 12.2mm septum dia
+    const vBase = -5.0;
+    const vTop = 6.0;
 
-    // 2. Titanium Chamber Outer Ring (Ø 14.8 mm, radius 7.4 mm)
-    const chamberPoly = [];
-    const nChamber = 32;
-    for (let i = 0; i < nChamber; i++) {
-      const deg = (360.0 * i) / nChamber;
-      const r = (deg * Math.PI) / 180.0;
-      chamberPoly.push(transformPt(7.4 * Math.cos(r), 7.4 * Math.sin(r)));
-    }
+    // 1. Outer Epoxy Housing (Low-Profile Cross Section: sloping nose, flat base, septum crest)
+    const housingPoly = [
+      transformPt(uNose, vBase),
+      transformPt(uNose, vBase + 2.0),
+      transformPt(uNose + 4.0, -0.5),
+      transformPt(-rCh, 3.2),
+      transformPt(-rSep, vTop - 0.4),
+      transformPt(0.0, vTop),
+      transformPt(rSep, vTop - 0.4),
+      transformPt(rCh + 1.1, 3.5),
+      transformPt(uBase, 0.5),
+      transformPt(uBase, vBase),
+      transformPt(0.0, vBase),
+    ];
 
-    // 3. Titanium Cannula & Catheter Connector Stem
+    // 2. Titanium Chamber Cup (solid metal core)
+    const chamberPoly = [
+      transformPt(-rCh, vBase + 0.5),
+      transformPt(-rCh, vTop - 1.0),
+      transformPt(-rSep, vTop - 0.7),
+      transformPt(rSep, vTop - 0.7),
+      transformPt(rCh, vTop - 1.0),
+      transformPt(rCh, vBase + 0.5),
+      transformPt(0.0, vBase + 0.5),
+    ];
+
+    // 3. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN FOR NEEDLE PUNCTURE!)
+    const septumPoly = [
+      transformPt(-rSep, 2.5),
+      transformPt(-rSep, vTop - 0.3),
+      transformPt(0.0, vTop),
+      transformPt(rSep, vTop - 0.3),
+      transformPt(rSep, 2.5),
+      transformPt(0.0, 2.5),
+    ];
+
+    // 4. Outflow Cannula / Stem towards catheter (pointing medially towards vein)
     const cannulaPoly = [
-      transformPt(-1.1, -7.4),
-      transformPt(-1.1, -22.5),
-      transformPt(1.1, -22.5),
-      transformPt(1.1, -7.4),
+      transformPt(rCh, -2.0),
+      transformPt(rCh + 9.5, -2.0),
+      transformPt(rCh + 9.5, 0.2),
+      transformPt(rCh, 0.2),
     ];
 
     return {
       housingPoly,
       chamberPoly,
+      septumPoly,
       cannulaPoly,
-      composite: [housingPoly, chamberPoly, cannulaPoly],
+      composite: [housingPoly, chamberPoly, septumPoly, cannulaPoly],
     };
   }
 

@@ -147,81 +147,164 @@ def generate_celsite_delta_points_mm(specs: Optional[CelsiteSpecs] = None, num_p
     return np.array(pts, dtype=np.float64)
 
 
-def generate_celsite_contours_px(
+def generate_celsite_axial_contours_px(
     cx: float,
     cy: float,
-    angle_deg: float,
-    pixel_spacing: Union[float, Tuple[float, float]],
+    pixel_spacing: Union[float, Tuple[float, float]] = 1.0,
+    is_left_hemi: bool = True,
     size: str = "standard",
     include_details: bool = True
 ) -> Dict[str, List[List[int]]]:
-    """Transforms the B. Braun Celsite CAD model into exact 2D pixel coordinates for CT viewer overlay.
+    """Generates exact anatomical cross-section contours of the B. Braun Celsite port
+    for an Axial CT slice, oriented so the silicone septum faces the skin for needle puncture.
     
-    Args:
-        cx, cy: Sub-pixel coordinates of the titanium chamber center.
-        angle_deg: Orientation angle of the port's long axis (+V nose vector) in CT image degrees.
-        pixel_spacing: In-plane pixel spacing in mm/pixel (e.g. 1.169 or (dy, dx)).
-        size: "standard" or "small".
-        include_details: If True, returns outer housing, titanium chamber, septum, and cannula.
-    
-    Returns:
-        Dictionary with polygon contours:
-        {
-            "housing": [[x, y], ...],
-            "chamber": [[x, y], ...],
-            "septum": [[x, y], ...],
-            "cannula": [[x, y], ...],
-            "composite": [housing_poly, chamber_poly, ...]
-        }
+    Orientation:
+    - Base plate rests on the pectoral muscle wall (chest inclination ~ 26.5°).
+    - Silicone septum dome faces anteriorly towards the skin (direct needle puncture trajectory).
+    - Low-profile sloping nose tapers into the lateral subcutaneous fat pocket.
+    - Outflow cannula exits medially towards the subclavian vein catheter.
     """
     specs = CELSITE_PRESETS.get(size, CELSITE_PRESETS["standard"])
-    
     if isinstance(pixel_spacing, (tuple, list)):
         dy_mm, dx_mm = float(pixel_spacing[0]), float(pixel_spacing[1])
     else:
         dy_mm = dx_mm = float(pixel_spacing)
 
-    # Orientation unit vectors in CT pixel space:
-    # +V axis (nose direction) at angle_deg
+    theta = math.radians(26.5)
+    if is_left_hemi:
+        # Patient left chest (image right, x > 256):
+        # Medial tangent towards sternum/vein (x decreases, y decreases slightly)
+        tx = -math.cos(theta)
+        ty = -math.sin(theta)
+        # Normal towards skin (superficial / anterior, ny < 0)
+        nx = math.sin(theta)
+        ny = -math.cos(theta)
+    else:
+        # Patient right chest (image left, x < 256):
+        # Medial tangent towards sternum/vein (x increases, y decreases slightly)
+        tx = math.cos(theta)
+        ty = -math.sin(theta)
+        # Normal towards skin (superficial / anterior, ny < 0)
+        nx = -math.sin(theta)
+        ny = -math.cos(theta)
+
+    scale_ratio = specs.length_mm / 32.0
+
+    def pt(u_mm: float, v_mm: float) -> List[int]:
+        px = cx + (u_mm * tx) / dx_mm + (v_mm * nx) / dx_mm
+        py = cy + (u_mm * ty) / dy_mm + (v_mm * ny) / dy_mm
+        return [int(round(px)), int(round(py))]
+
+    u_nose = -14.0 * scale_ratio
+    u_base = 10.0 * scale_ratio
+    r_ch = specs.chamber_outer_dia_mm / 2.0
+    r_sep = specs.septum_dia_mm / 2.0
+    v_base = -5.0 * scale_ratio
+    v_top = 6.0 * scale_ratio
+
+    # 1. Outer Epoxy Housing (Low-Profile Cross Section: sloping nose, flat base, septum crest)
+    housing = [
+        pt(u_nose, v_base),
+        pt(u_nose, v_base + 2.0 * scale_ratio),
+        pt(u_nose + 4.0 * scale_ratio, -0.5 * scale_ratio),
+        pt(-r_ch, 3.2 * scale_ratio),
+        pt(-r_sep, v_top - 0.4 * scale_ratio),
+        pt(0.0, v_top),
+        pt(r_sep, v_top - 0.4 * scale_ratio),
+        pt(r_ch + 1.1 * scale_ratio, 3.5 * scale_ratio),
+        pt(u_base, 0.5 * scale_ratio),
+        pt(u_base, v_base),
+        pt(0.0, v_base),
+    ]
+
+    # 2. Titanium Chamber Cup (solid metal core)
+    chamber = [
+        pt(-r_ch, v_base + 0.5 * scale_ratio),
+        pt(-r_ch, v_top - 1.0 * scale_ratio),
+        pt(-r_sep, v_top - 0.7 * scale_ratio),
+        pt(r_sep, v_top - 0.7 * scale_ratio),
+        pt(r_ch, v_top - 1.0 * scale_ratio),
+        pt(r_ch, v_base + 0.5 * scale_ratio),
+        pt(0.0, v_base + 0.5 * scale_ratio),
+    ]
+
+    # 3. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN FOR NEEDLE PUNCTURE!)
+    septum = [
+        pt(-r_sep, 2.5 * scale_ratio),
+        pt(-r_sep, v_top - 0.3 * scale_ratio),
+        pt(0.0, v_top),
+        pt(r_sep, v_top - 0.3 * scale_ratio),
+        pt(r_sep, 2.5 * scale_ratio),
+        pt(0.0, 2.5 * scale_ratio),
+    ]
+
+    # 4. Outflow Cannula / Stem towards catheter (pointing medially towards vein)
+    cannula = [
+        pt(r_ch, -2.0 * scale_ratio),
+        pt(r_ch + 9.5 * scale_ratio, -2.0 * scale_ratio),
+        pt(r_ch + 9.5 * scale_ratio, 0.2 * scale_ratio),
+        pt(r_ch, 0.2 * scale_ratio),
+    ]
+
+    composite = [housing, chamber, septum, cannula] if include_details else [housing]
+    return {
+        "housing": housing,
+        "chamber": chamber,
+        "septum": septum,
+        "cannula": cannula,
+        "composite": composite,
+    }
+
+
+def generate_celsite_contours_px(
+    cx: float,
+    cy: float,
+    angle_deg: Optional[float] = None,
+    pixel_spacing: Union[float, Tuple[float, float]] = 1.0,
+    size: str = "standard",
+    include_details: bool = True,
+    view: str = "axial"
+) -> Dict[str, List[List[int]]]:
+    """Transforms the B. Braun Celsite CAD model into exact 2D pixel coordinates for CT viewer overlay.
+    Defaults to the anatomical Axial cross-section where the silicone septum faces the skin for needle puncture.
+    """
+    if view == "axial" or angle_deg is None or abs(angle_deg - 198.5) < 2.0 or abs(angle_deg - 341.5) < 2.0:
+        is_left = cx > 256.0
+        return generate_celsite_axial_contours_px(cx, cy, pixel_spacing, is_left_hemi=is_left, size=size, include_details=include_details)
+
+    specs = CELSITE_PRESETS.get(size, CELSITE_PRESETS["standard"])
+    if isinstance(pixel_spacing, (tuple, list)):
+        dy_mm, dx_mm = float(pixel_spacing[0]), float(pixel_spacing[1])
+    else:
+        dy_mm = dx_mm = float(pixel_spacing)
+
     rad = math.radians(angle_deg)
-    cos_a = math.cos(rad)
-    sin_a = math.sin(rad)
-    
-    # +V unit vector (longitudinal): vx, vy
-    vx = cos_a
-    vy = sin_a
-    # +U unit vector (lateral, 90 deg clockwise): ux, uy
-    ux = -sin_a
-    uy = cos_a
+    cos_a, sin_a = math.cos(rad), math.sin(rad)
+    vx, vy = cos_a, sin_a
+    ux, uy = -sin_a, cos_a
 
     def transform_pt(u_mm: float, v_mm: float) -> List[int]:
-        u_px = u_mm / dx_mm
-        v_px = v_mm / dy_mm
+        u_px, v_px = u_mm / dx_mm, v_mm / dy_mm
         px = cx + u_px * ux + v_px * vx
         py = cy + u_px * uy + v_px * vy
         return [int(round(px)), int(round(py))]
 
-    # 1. Outer Epoxy Housing (Delta Contour)
     delta_pts_mm = generate_celsite_delta_points_mm(specs)
     housing_poly = [transform_pt(u, v) for u, v in delta_pts_mm]
 
-    # 2. Titanium Chamber Outer Ring
     r_ch_mm = specs.chamber_outer_dia_mm / 2.0
     chamber_poly = []
     for deg in np.linspace(0.0, 360.0, 32, endpoint=False):
         c_rad = math.radians(deg)
         chamber_poly.append(transform_pt(r_ch_mm * math.cos(c_rad), r_ch_mm * math.sin(c_rad)))
 
-    # 3. Silicone Septum Puncture Disc
     r_sep_mm = specs.septum_dia_mm / 2.0
     septum_poly = []
     for deg in np.linspace(0.0, 360.0, 24, endpoint=False):
         s_rad = math.radians(deg)
         septum_poly.append(transform_pt(r_sep_mm * math.cos(s_rad), r_sep_mm * math.sin(s_rad)))
 
-    # 4. Outflow Titanium Cannula & Catheter Connector Stem
-    # Extends from titanium chamber base (v = -r_ch_mm) to cannula end (v = -specs.length_mm/2 - specs.cannula_len_mm)
-    w_can = (specs.cannula_dia_mm / 2.0)
+    w_can = specs.cannula_dia_mm / 2.0
     v_start = -r_ch_mm
     v_end = specs.base_notch_v_mm - specs.cannula_len_mm
     cannula_poly = [
@@ -234,6 +317,7 @@ def generate_celsite_contours_px(
     composite = [housing_poly]
     if include_details:
         composite.append(chamber_poly)
+        composite.append(septum_poly)
         composite.append(cannula_poly)
 
     return {

@@ -86,25 +86,31 @@ export class ContourOverlay {
         const poly = this.contours.port[pIdx];
         if (!poly || poly.length < 3) continue;
 
-        ctx.save();
-        if (pIdx === 1) {
-          // Inner Titanium Chamber & Septum ring: luminous mint/teal core
-          ctx.strokeStyle = "#14b8a6";
-          ctx.fillStyle = "rgba(45, 212, 191, 0.32)";
+        if (pIdx === 2 && this.contours.port.length >= 3) {
+          // 3. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN - Needle Target)
+          ctx.strokeStyle = "#38bdf8";
+          ctx.fillStyle = "rgba(56, 189, 248, 0.45)";
           ctx.lineWidth = 2.4 / this.zoom;
-          ctx.shadowColor = "#2dd4bf";
+          ctx.shadowColor = "#38bdf8";
           ctx.shadowBlur = 10 / this.zoom;
-        } else if (pIdx === 2) {
-          // Outflow Titanium Cannula / Catheter Connection Stem
+        } else if (pIdx === 1 && this.contours.port.length >= 2) {
+          // 2. Titanium Chamber Cup
+          ctx.strokeStyle = "#94a3b8";
+          ctx.fillStyle = "rgba(148, 163, 184, 0.28)";
+          ctx.lineWidth = 2.0 / this.zoom;
+          ctx.shadowColor = "#64748b";
+          ctx.shadowBlur = 6 / this.zoom;
+        } else if (pIdx === 3) {
+          // 4. Outflow Cannula / Stem towards catheter
           ctx.strokeStyle = "#0d9488";
           ctx.fillStyle = "rgba(13, 148, 136, 0.40)";
-          ctx.lineWidth = 2.0 / this.zoom;
+          ctx.lineWidth = 1.8 / this.zoom;
           ctx.shadowColor = "#2dd4bf";
           ctx.shadowBlur = 6 / this.zoom;
         } else {
-          // Outer Epoxy Delta Housing Profile
+          // 1. Outer Epoxy Housing Profile (Base resting on chest wall)
           ctx.strokeStyle = "#0d9488";
-          ctx.fillStyle = "rgba(13, 148, 136, 0.18)";
+          ctx.fillStyle = "rgba(13, 148, 136, 0.16)";
           ctx.lineWidth = 2.2 / this.zoom;
           ctx.shadowColor = "#2dd4bf";
           ctx.shadowBlur = 8 / this.zoom;
