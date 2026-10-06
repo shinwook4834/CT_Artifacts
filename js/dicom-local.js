@@ -304,8 +304,8 @@ export class LocalDicomLoader {
     }
 
     if (bestCluster && bestCluster.cluster) {
-      // 1. All-HU Adaptive Titanium Core Peak
-      const tiThresh = bestCluster.maxHu >= 6000 ? Math.max(3500, bestCluster.maxHu * 0.38) : Math.max(1600, bestCluster.maxHu * 0.60);
+      // 1. All-HU Adaptive Titanium Core Peak (accurately captures full U-shaped titanium cup border)
+      const tiThresh = bestCluster.maxHu >= 6000 ? Math.max(3200, Math.min(4500, bestCluster.maxHu * 0.16)) : Math.max(1600, bestCluster.maxHu * 0.60);
       let sumWeightedX = 0, sumWeightedY = 0, sumWeights = 0;
       let tiCount = 0;
 
@@ -465,7 +465,7 @@ export class LocalDicomLoader {
    */
   static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true, size = 'standard', actualTiContour = null) {
     const pxScale = 1.0 / (pixelSpacing || 1.0);
-    const theta = (21.0 * Math.PI) / 180.0;
+    const theta = (18.5 * Math.PI) / 180.0;
 
     let tx, ty, nx, ny;
     if (isLeftHemisphere) {
@@ -497,14 +497,12 @@ export class LocalDicomLoader {
     // Official B. Braun Celsite® Engineering Specifications
     const isSmall = size === 'small';
     const lengthMm = isSmall ? 26.0 : 32.0;
-    const rCh = isSmall ? 6.0 : 7.4;    // Chamber radius (Ø 12.0mm vs Ø 14.8mm)
-    const rSep = isSmall ? 4.85 : 6.1;  // Septum radius (Ø 9.7mm vs Ø 12.2mm)
-    const heightMm = isSmall ? 9.5 : 12.5;
+    const rSep = 5.2;   // Septum radius
+    const vBase = -6.5; // seated 2mm below titanium cup base along deep pectoral muscle fascia
+    const vTop = 6.6;   // elevated anteriorly towards skin
 
     const uNose = lengthMm * 0.48;
     const uBase = -lengthMm * 0.42;
-    const vBase = -heightMm * 0.35;
-    const vTop = heightMm * 0.65;
 
     // 1. Outer Housing Profile (Standard 32 mm teardrop/wedge profile)
     const housingPoly = [];
@@ -525,11 +523,11 @@ export class LocalDicomLoader {
       housingPoly.push(transformPt(u, v));
     }
     // Sloping anterior face from nose up to septum crest and down to medial wing
-    housingPoly.push(transformPt(uNose * 0.6, vTop * 0.48));
-    housingPoly.push(transformPt(rSep * 1.05, vTop * 0.88));
+    housingPoly.push(transformPt(uNose * 0.6, vTop * 0.5));
+    housingPoly.push(transformPt(rSep * 1.05, vTop * 0.9));
     housingPoly.push(transformPt(0.0, vTop));
-    housingPoly.push(transformPt(-rSep * 1.05, vTop * 0.88));
-    housingPoly.push(transformPt(uBase * 0.6, vTop * 0.38));
+    housingPoly.push(transformPt(-rSep * 1.05, vTop * 0.9));
+    housingPoly.push(transformPt(uBase * 0.6, vTop * 0.4));
     // Rounded medial wing tip (-u)
     for (let i = 0; i <= 6; i++) {
       const deg = 120.0 + (120.0 * i) / 6.0;
@@ -541,10 +539,10 @@ export class LocalDicomLoader {
 
     // 2. Outflow Cannula Stem (exiting medially towards catheter/vein)
     const cannulaPoly = [
-      transformPt(-5.8, vBase * 0.35),
-      transformPt(uBase - 8.5, vBase * 0.35),
-      transformPt(uBase - 8.5, vBase * 0.35 + 2.2),
-      transformPt(-5.8, vBase * 0.35 + 2.2),
+      transformPt(-5.8, vBase * 0.2),
+      transformPt(uBase - 8.5, vBase * 0.2),
+      transformPt(uBase - 8.5, vBase * 0.2 + 2.2),
+      transformPt(-5.8, vBase * 0.2 + 2.2),
     ];
 
     // 3. Titanium Chamber Rim (Matches the visible All-HU titanium boundary exactly)
@@ -552,32 +550,36 @@ export class LocalDicomLoader {
     if (actualTiContour && actualTiContour.length >= 8) {
       chamberPoly = actualTiContour;
     } else {
-      // Fallback: Exact calibrated All-HU titanium chamber boundary
+      // Fallback: Exact calibrated All-HU titanium U-shape cup boundary (tilted 18.5 deg)
       chamberPoly = [
-        [Math.round((cx - 3.5) * 10) / 10, Math.round((cy - 2.7) * 10) / 10],
-        [Math.round((cx - 4.1) * 10) / 10, Math.round((cy - 2.1) * 10) / 10],
-        [Math.round((cx - 4.4) * 10) / 10, Math.round((cy - 1.3) * 10) / 10],
-        [Math.round((cx - 4.4) * 10) / 10, Math.round((cy - 0.3) * 10) / 10],
-        [Math.round((cx - 4.1) * 10) / 10, Math.round((cy + 0.5) * 10) / 10],
-        [Math.round((cx - 3.5) * 10) / 10, Math.round((cy + 1.1) * 10) / 10],
-        [Math.round((cx - 2.6) * 10) / 10, Math.round((cy + 1.6) * 10) / 10],
-        [Math.round((cx - 1.7) * 10) / 10, Math.round((cy + 2.0) * 10) / 10],
-        [Math.round((cx - 0.7) * 10) / 10, Math.round((cy + 2.3) * 10) / 10],
-        [Math.round((cx + 0.3) * 10) / 10, Math.round((cy + 2.5) * 10) / 10],
-        [Math.round((cx + 1.3) * 10) / 10, Math.round((cy + 2.6) * 10) / 10],
-        [Math.round((cx + 2.3) * 10) / 10, Math.round((cy + 2.6) * 10) / 10],
-        [Math.round((cx + 3.2) * 10) / 10, Math.round((cy + 2.5) * 10) / 10],
-        [Math.round((cx + 4.0) * 10) / 10, Math.round((cy + 2.1) * 10) / 10],
-        [Math.round((cx + 4.5) * 10) / 10, Math.round((cy + 1.5) * 10) / 10],
-        [Math.round((cx + 4.5) * 10) / 10, Math.round((cy + 0.7) * 10) / 10],
-        [Math.round((cx + 4.0) * 10) / 10, Math.round((cy - 0.1) * 10) / 10],
-        [Math.round((cx + 3.2) * 10) / 10, Math.round((cy - 0.9) * 10) / 10],
-        [Math.round((cx + 2.3) * 10) / 10, Math.round((cy - 1.4) * 10) / 10],
-        [Math.round((cx + 1.3) * 10) / 10, Math.round((cy - 1.9) * 10) / 10],
-        [Math.round((cx + 0.3) * 10) / 10, Math.round((cy - 2.3) * 10) / 10],
-        [Math.round((cx - 0.7) * 10) / 10, Math.round((cy - 2.6) * 10) / 10],
-        [Math.round((cx - 1.7) * 10) / 10, Math.round((cy - 2.9) * 10) / 10],
-        [Math.round((cx - 2.6) * 10) / 10, Math.round((cy - 2.9) * 10) / 10],
+        [Math.round((cx - 5.0) * 10) / 10, Math.round((cy - 1.4) * 10) / 10],
+        [Math.round((cx - 4.6) * 10) / 10, Math.round((cy - 2.4) * 10) / 10],
+        [Math.round((cx - 3.6) * 10) / 10, Math.round((cy - 3.3) * 10) / 10],
+        [Math.round((cx - 2.7) * 10) / 10, Math.round((cy - 3.8) * 10) / 10],
+        [Math.round((cx - 1.7) * 10) / 10, Math.round((cy - 4.1) * 10) / 10],
+        [Math.round((cx - 0.7) * 10) / 10, Math.round((cy - 4.3) * 10) / 10],
+        [Math.round((cx + 0.3) * 10) / 10, Math.round((cy - 4.2) * 10) / 10],
+        [Math.round((cx + 1.3) * 10) / 10, Math.round((cy - 3.8) * 10) / 10],
+        [Math.round((cx + 2.2) * 10) / 10, Math.round((cy - 3.2) * 10) / 10],
+        [Math.round((cx + 3.1) * 10) / 10, Math.round((cy - 2.3) * 10) / 10],
+        [Math.round((cx + 3.8) * 10) / 10, Math.round((cy - 1.3) * 10) / 10],
+        [Math.round((cx + 4.4) * 10) / 10, Math.round((cy - 0.3) * 10) / 10],
+        [Math.round((cx + 4.9) * 10) / 10, Math.round((cy + 0.7) * 10) / 10],
+        [Math.round((cx + 5.1) * 10) / 10, Math.round((cy + 1.7) * 10) / 10],
+        [Math.round((cx + 4.7) * 10) / 10, Math.round((cy + 2.4) * 10) / 10],
+        [Math.round((cx + 4.1) * 10) / 10, Math.round((cy + 3.0) * 10) / 10],
+        [Math.round((cx + 3.2) * 10) / 10, Math.round((cy + 3.6) * 10) / 10],
+        [Math.round((cx + 2.3) * 10) / 10, Math.round((cy + 4.0) * 10) / 10],
+        [Math.round((cx + 1.3) * 10) / 10, Math.round((cy + 4.3) * 10) / 10],
+        [Math.round((cx + 0.3) * 10) / 10, Math.round((cy + 4.5) * 10) / 10],
+        [Math.round((cx - 0.7) * 10) / 10, Math.round((cy + 4.5) * 10) / 10],
+        [Math.round((cx - 1.7) * 10) / 10, Math.round((cy + 4.3) * 10) / 10],
+        [Math.round((cx - 2.6) * 10) / 10, Math.round((cy + 3.9) * 10) / 10],
+        [Math.round((cx - 3.5) * 10) / 10, Math.round((cy + 3.4) * 10) / 10],
+        [Math.round((cx - 4.2) * 10) / 10, Math.round((cy + 2.6) * 10) / 10],
+        [Math.round((cx - 4.7) * 10) / 10, Math.round((cy + 1.7) * 10) / 10],
+        [Math.round((cx - 5.0) * 10) / 10, Math.round((cy + 0.6) * 10) / 10],
+        [Math.round((cx - 5.1) * 10) / 10, Math.round((cy - 0.4) * 10) / 10],
       ];
     }
 
@@ -586,12 +588,12 @@ export class LocalDicomLoader {
     const nSeptum = 16;
     for (let i = 0; i <= nSeptum; i++) {
       const rad = (Math.PI * i) / nSeptum;
-      const u = (rSep * 0.88) * Math.cos(rad);
-      const v = 2.4 + (vTop - 2.4) * Math.sin(rad);
+      const u = (rSep * 0.85) * Math.cos(rad);
+      const v = 3.6 + (vTop - 3.6) * Math.sin(rad);
       septumPoly.push(transformPt(u, v));
     }
-    septumPoly.push(transformPt(-rSep * 0.88, 2.4));
-    septumPoly.push(transformPt(rSep * 0.88, 2.4));
+    septumPoly.push(transformPt(-rSep * 0.85, 3.6));
+    septumPoly.push(transformPt(rSep * 0.85, 3.6));
 
     return {
       housingPoly,
