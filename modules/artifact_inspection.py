@@ -307,9 +307,7 @@ def detect_approach_a_slice_contours(
                 if cnts_ti and len(cnts_ti[0]) >= 4:
                     ti_contour = cnts_ti[0].reshape(-1, 2).tolist()
 
-        septum_arc = [p for p in ti_contour if p[1] <= py] if ti_contour else None
-        angle_deg = 198.5 if px > w / 2.0 else 341.5
-        c_cnts = generate_celsite_contours_px(px, py, angle_deg, pixel_spacing, size="standard", actual_chamber=ti_contour, septum_arc=septum_arc)
+        c_cnts = generate_celsite_contours_px(px, py, angle_deg, pixel_spacing, size="standard")
         port_polys = c_cnts["composite"]
     elif has_port and np.any(port_mask):
         cnts_p, _ = cv2.findContours(port_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)

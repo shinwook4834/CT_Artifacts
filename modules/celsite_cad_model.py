@@ -160,108 +160,89 @@ def generate_celsite_axial_contours_px(
     """Generates exact anatomical cross-section contours of the B. Braun Celsite port
     for an Axial CT slice, oriented so the silicone septum faces the skin for needle puncture.
     """
-    if actual_chamber is not None and len(actual_chamber) >= 4:
-        port_body = actual_chamber
-        if septum_arc is None or len(septum_arc) < 2:
-            septum_arc = [p for p in port_body if p[1] <= cy]
-        composite = [port_body, septum_arc] if len(septum_arc) >= 2 else [port_body]
-        return {
-            "port_body": port_body,
-            "septum_arc": septum_arc,
-            "composite": composite,
-        }
-
-    specs = CELSITE_PRESETS.get(size, CELSITE_PRESETS["standard"])
     if isinstance(pixel_spacing, (tuple, list)):
         dy_mm, dx_mm = float(pixel_spacing[0]), float(pixel_spacing[1])
     else:
         dy_mm = dx_mm = float(pixel_spacing)
 
-    theta = math.radians(26.5)
+    theta = math.radians(21.0)
     if is_left_hemi:
-        # Patient left chest (image right, x > 256):
-        # Medial tangent towards sternum/vein (x decreases, y decreases slightly)
-        tx = -math.cos(theta)
-        ty = -math.sin(theta)
-        # Normal towards skin (superficial / anterior, ny < 0)
+        # Patient left chest (x > 256):
+        tx = math.cos(theta)
+        ty = math.sin(theta)
         nx = math.sin(theta)
         ny = -math.cos(theta)
     else:
-        # Patient right chest (image left, x < 256):
-        # Medial tangent towards sternum/vein (x increases, y decreases slightly)
-        tx = math.cos(theta)
-        ty = -math.sin(theta)
-        # Normal towards skin (superficial / anterior, ny < 0)
+        # Patient right chest (x <= 256):
+        tx = -math.cos(theta)
+        ty = math.sin(theta)
         nx = -math.sin(theta)
         ny = -math.cos(theta)
-
-    scale_ratio = specs.length_mm / 32.0
 
     def pt(u_mm: float, v_mm: float) -> List[int]:
         px = cx + (u_mm * tx) / dx_mm + (v_mm * nx) / dx_mm
         py = cy + (u_mm * ty) / dy_mm + (v_mm * ny) / dy_mm
         return [int(round(px)), int(round(py))]
 
-    u_nose = -14.0 * scale_ratio
-    u_base = 10.0 * scale_ratio
-    r_ch = specs.chamber_outer_dia_mm / 2.0
-    r_sep = specs.septum_dia_mm / 2.0
-    v_base = -5.0 * scale_ratio
-    v_top = 6.0 * scale_ratio
+    # 1. Outer Housing Profile (Smooth teardrop/wedge axial contour)
+    housing = []
+    for i in range(9):
+        u = -8.5 + (18.0 * i) / 8.0
+        v = -3.8 + 0.15 * (1.0 - (u / 9.0) ** 2)
+        housing.append(pt(u, v))
 
-    # 1. Outer Epoxy Housing (Low-Profile Cross Section: sloping nose, flat base, septum crest)
-    housing = [
-        pt(u_nose, v_base),
-        pt(u_nose, v_base + 2.0 * scale_ratio),
-        pt(u_nose + 4.0 * scale_ratio, -0.5 * scale_ratio),
-        pt(-r_ch, 3.2 * scale_ratio),
-        pt(-r_sep, v_top - 0.4 * scale_ratio),
-        pt(0.0, v_top),
-        pt(r_sep, v_top - 0.4 * scale_ratio),
-        pt(r_ch + 1.1 * scale_ratio, 3.5 * scale_ratio),
-        pt(u_base, 0.5 * scale_ratio),
-        pt(u_base, v_base),
-        pt(0.0, v_base),
-    ]
+    for i in range(7):
+        deg = -70.0 + (140.0 * i) / 6.0
+        rad = math.radians(deg)
+        u = 9.5 + 1.8 * math.cos(rad)
+        v = -2.0 + 1.8 * math.sin(rad)
+        housing.append(pt(u, v))
 
-    # 2. Titanium Chamber Cup (solid metal core or extracted All-HU titanium boundary)
-    if actual_chamber is not None and len(actual_chamber) >= 4:
-        chamber = actual_chamber
-    else:
-        chamber = [
-            pt(-r_ch, v_base + 0.5 * scale_ratio),
-            pt(-r_ch, v_top - 1.0 * scale_ratio),
-            pt(-r_sep, v_top - 0.7 * scale_ratio),
-            pt(r_sep, v_top - 0.7 * scale_ratio),
-            pt(r_ch, v_top - 1.0 * scale_ratio),
-            pt(r_ch, v_base + 0.5 * scale_ratio),
-            pt(0.0, v_base + 0.5 * scale_ratio),
-        ]
+    housing.append(pt(7.0, 1.8))
+    housing.append(pt(4.5, 4.4))
+    housing.append(pt(2.0, 4.9))
+    housing.append(pt(0.0, 5.0))
+    housing.append(pt(-2.0, 4.9))
+    housing.append(pt(-4.5, 4.4))
+    housing.append(pt(-7.0, 2.0))
 
-    # 3. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN FOR NEEDLE PUNCTURE!)
-    septum = [
-        pt(-r_sep, 2.5 * scale_ratio),
-        pt(-r_sep, v_top - 0.3 * scale_ratio),
-        pt(0.0, v_top),
-        pt(r_sep, v_top - 0.3 * scale_ratio),
-        pt(r_sep, 2.5 * scale_ratio),
-        pt(0.0, 2.5 * scale_ratio),
-    ]
+    for i in range(7):
+        deg = 110.0 + (140.0 * i) / 6.0
+        rad = math.radians(deg)
+        u = -8.5 + 1.6 * math.cos(rad)
+        v = -2.2 + 1.6 * math.sin(rad)
+        housing.append(pt(u, v))
 
-    # 4. Outflow Cannula / Stem towards catheter (pointing medially towards vein)
+    # 2. Outflow Cannula Stem (exiting medially towards catheter/vein)
     cannula = [
-        pt(r_ch, -2.0 * scale_ratio),
-        pt(r_ch + 9.5 * scale_ratio, -2.0 * scale_ratio),
-        pt(r_ch + 9.5 * scale_ratio, 0.2 * scale_ratio),
-        pt(r_ch, 0.2 * scale_ratio),
+        pt(-5.6, -1.5),
+        pt(-12.5, -1.5),
+        pt(-12.5, 0.5),
+        pt(-5.6, 0.5),
     ]
 
-    composite = [housing, chamber, septum, cannula] if include_details else [housing]
+    # 3. Titanium Chamber Cup
+    chamber = []
+    for deg in np.linspace(0, 360, 36, endpoint=False):
+        rad = math.radians(deg)
+        chamber.append(pt(5.7 * math.cos(rad), 3.6 * math.sin(rad)))
+
+    # 4. Silicone Septum Puncture Dome (FACING SKIN)
+    septum = []
+    for deg in np.linspace(0, 180, 17):
+        rad = math.radians(deg)
+        u = 4.2 * math.cos(rad)
+        v = 2.4 + 2.4 * math.sin(rad)
+        septum.append(pt(u, v))
+    septum.append(pt(-4.2, 1.2))
+    septum.append(pt(4.2, 1.2))
+
+    composite = [housing, cannula, chamber, septum] if include_details else [housing]
     return {
         "housing": housing,
+        "cannula": cannula,
         "chamber": chamber,
         "septum": septum,
-        "cannula": cannula,
         "composite": composite,
     }
 

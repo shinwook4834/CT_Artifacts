@@ -79,43 +79,51 @@ export class ContourOverlay {
       ctx.restore();
     }
 
-    // 2. Draw ChemoPort Implant Contour (Physical Titanium Reservoir + Anterior Septum Puncture Crest)
+    // 2. Draw ChemoPort Implant Contours (Outer Housing + Outflow Cannula + Titanium Chamber + Silicone Septum)
     if (this.showPort && this.contours.port && this.contours.port.length > 0) {
       for (let pIdx = 0; pIdx < this.contours.port.length; pIdx++) {
         const poly = this.contours.port[pIdx];
-        if (!poly || poly.length < 2) continue;
+        if (!poly || poly.length < 3) continue;
 
         ctx.save();
-        if (pIdx === 1) {
-          // Septum Crest (Anterior skin-facing Huber needle puncture target)
+        if (pIdx === 3) {
+          // Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN - Huber Needle Target)
           ctx.strokeStyle = "#38bdf8";
-          ctx.lineWidth = 2.8 / this.zoom;
+          ctx.fillStyle = "rgba(56, 189, 248, 0.45)";
+          ctx.lineWidth = 2.4 / this.zoom;
           ctx.shadowColor = "#38bdf8";
-          ctx.shadowBlur = 8 / this.zoom;
-
-          ctx.beginPath();
-          ctx.moveTo(poly[0][0], poly[0][1]);
-          for (let i = 1; i < poly.length; i++) {
-            ctx.lineTo(poly[i][0], poly[i][1]);
-          }
-          ctx.stroke();
-        } else {
-          // Port Body (Physical titanium reservoir contour matching All-HU outline)
-          ctx.strokeStyle = "#0d9488";
-          ctx.fillStyle = "rgba(13, 148, 136, 0.20)";
+          ctx.shadowBlur = 10 / this.zoom;
+        } else if (pIdx === 2) {
+          // Titanium Chamber Cup (All-HU Titanium Reservoir)
+          ctx.strokeStyle = "#f8fafc";
+          ctx.fillStyle = "rgba(248, 250, 252, 0.30)";
           ctx.lineWidth = 2.0 / this.zoom;
+          ctx.shadowColor = "#94a3b8";
+          ctx.shadowBlur = 8 / this.zoom;
+        } else if (pIdx === 1) {
+          // Outflow Cannula Stem (towards medial subclavian catheter)
+          ctx.strokeStyle = "#0d9488";
+          ctx.fillStyle = "rgba(13, 148, 136, 0.40)";
+          ctx.lineWidth = 1.8 / this.zoom;
           ctx.shadowColor = "#2dd4bf";
           ctx.shadowBlur = 6 / this.zoom;
-
-          ctx.beginPath();
-          ctx.moveTo(poly[0][0], poly[0][1]);
-          for (let i = 1; i < poly.length; i++) {
-            ctx.lineTo(poly[i][0], poly[i][1]);
-          }
-          ctx.closePath();
-          ctx.fill();
-          ctx.stroke();
+        } else {
+          // Outer Housing Body (Celsite Low-Profile Teardrop Profile)
+          ctx.strokeStyle = "#0d9488";
+          ctx.fillStyle = "rgba(13, 148, 136, 0.16)";
+          ctx.lineWidth = 2.2 / this.zoom;
+          ctx.shadowColor = "#2dd4bf";
+          ctx.shadowBlur = 8 / this.zoom;
         }
+
+        ctx.beginPath();
+        ctx.moveTo(poly[0][0], poly[0][1]);
+        for (let i = 1; i < poly.length; i++) {
+          ctx.lineTo(poly[i][0], poly[i][1]);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
         ctx.restore();
       }
     }

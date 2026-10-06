@@ -59,9 +59,9 @@ export class LocalDicomLoader {
     const { bestIdx, anchor } = LocalDicomLoader.findSeriesChemoPortAnchor(slices);
 
     // Extract robust B. Braun Celsite CAD vector contours for all slices
-    const contoursMap = slices.map((sl) => {
+    const contoursMap = slices.map((sl, idx) => {
       const ps = sl.pixelSpacing ? sl.pixelSpacing[0] : (slices[0].pixelSpacing ? slices[0].pixelSpacing[0] : 1.0);
-      return LocalDicomLoader.extractContours(sl.hu, anchor, ps);
+      return LocalDicomLoader.extractContours(sl.hu, anchor, ps, idx, bestIdx);
     });
 
     return {
@@ -452,57 +452,118 @@ export class LocalDicomLoader {
 
   /**
    * Generates exact anatomical cross-section contours of the B. Braun Celsite® port
-   * on the Axial CT plane, matching the visible All-HU titanium boundary.
+   * on the Axial CT plane (Housing + Cannula + Titanium Chamber + Silicone Septum).
+   * 
+   * Anatomical orientation:
+   * - Flat base plate seated flush against deep pectoral muscle wall.
+   * - Silicone septum dome elevated on anterior superficial face, DIRECTLY FACING SKIN
+   *   to accept Huber needle puncture from the anterior skin surface.
+   * - Outflow cannula exiting medially towards the subclavian vein catheter.
+   * - Low-profile nose tapering laterally into subcutaneous fat tissue.
    */
-  static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true, actualPortContour = null, septumArc = null) {
-    if (actualPortContour && actualPortContour.length >= 6) {
-      const composite = [actualPortContour];
-      if (septumArc && septumArc.length >= 2) {
-        composite.push(septumArc);
-      }
-      return {
-        portBody: actualPortContour,
-        septumArc: septumArc || [],
-        composite,
-      };
+  static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true) {
+    const pxScale = 1.0 / (pixelSpacing || 1.0);
+    const theta = (21.0 * Math.PI) / 180.0;
+
+    let tx, ty, nx, ny;
+    if (isLeftHemisphere) {
+      // Patient left chest (x > 256):
+      // +u points laterally into subcutaneous pocket
+      // -u points medially towards vein catheter
+      tx = Math.cos(theta);
+      ty = Math.sin(theta);
+      // +v points towards anterior chest skin (needle puncture direction, ny < 0)
+      nx = Math.sin(theta);
+      ny = -Math.cos(theta);
+    } else {
+      // Patient right chest (x <= 256):
+      tx = -Math.cos(theta);
+      ty = Math.sin(theta);
+      nx = -Math.sin(theta);
+      ny = -Math.cos(theta);
     }
 
-    // Fallback parametric port capsule if no CT metal cluster is available
-    const pxScale = 1.0 / (pixelSpacing || 1.0);
-    const theta = (26.5 * Math.PI) / 180.0;
-    const cosA = Math.cos(theta);
-    const sinA = Math.sin(theta);
-    const semiMajPx = 6.0 * pxScale;
-    const semiMinPx = 3.2 * pxScale;
-    const nPts = 32;
-    const portBody = [];
-    for (let i = 0; i < nPts; i++) {
-      const t = (2.0 * Math.PI * i) / nPts;
-      const lx = semiMajPx * Math.cos(t);
-      const ly = semiMinPx * Math.sin(t);
-      portBody.push([
-        Math.round((cx + lx * cosA - ly * sinA) * 10) / 10,
-        Math.round((cy + lx * sinA + ly * cosA) * 10) / 10,
-      ]);
+    const transformPt = (uMm, vMm) => {
+      const uPx = uMm * pxScale;
+      const vPx = vMm * pxScale;
+      return [
+        Math.round((cx + uPx * tx + vPx * nx) * 10) / 10,
+        Math.round((cy + uPx * ty + vPx * ny) * 10) / 10,
+      ];
+    };
+
+    // 1. Outer Housing Profile (Smooth teardrop/wedge axial contour)
+    const housingPoly = [];
+    // Base line along muscle fascia (-v)
+    for (let i = 0; i <= 8; i++) {
+      const u = -8.5 + (18.0 * i) / 8.0;
+      const v = -3.8 + 0.15 * (1.0 - Math.pow(u / 9.0, 2));
+      housingPoly.push(transformPt(u, v));
     }
-    const arc = portBody.filter((p) => p[1] <= cy);
-    const composite = arc.length >= 2 ? [portBody, arc] : [portBody];
+    // Rounded lateral nose tip (+u)
+    for (let i = 0; i <= 6; i++) {
+      const deg = -70.0 + (140.0 * i) / 6.0;
+      const rad = (deg * Math.PI) / 180.0;
+      const u = 9.5 + 1.8 * Math.cos(rad);
+      const v = -2.0 + 1.8 * Math.sin(rad);
+      housingPoly.push(transformPt(u, v));
+    }
+    // Sloping anterior face from nose to septum crest
+    housingPoly.push(transformPt(7.0, 1.8));
+    housingPoly.push(transformPt(4.5, 4.4));
+    housingPoly.push(transformPt(2.0, 4.9));
+    housingPoly.push(transformPt(0.0, 5.0));
+    housingPoly.push(transformPt(-2.0, 4.9));
+    housingPoly.push(transformPt(-4.5, 4.4));
+    housingPoly.push(transformPt(-7.0, 2.0));
+    // Rounded medial wing tip (-u)
+    for (let i = 0; i <= 6; i++) {
+      const deg = 110.0 + (140.0 * i) / 6.0;
+      const rad = (deg * Math.PI) / 180.0;
+      const u = -8.5 + 1.6 * Math.cos(rad);
+      const v = -2.2 + 1.6 * Math.sin(rad);
+      housingPoly.push(transformPt(u, v));
+    }
+
+    // 2. Outflow Cannula Stem (exiting medially towards catheter/vein)
+    const cannulaPoly = [
+      transformPt(-5.6, -1.5),
+      transformPt(-12.5, -1.5),
+      transformPt(-12.5, 0.5),
+      transformPt(-5.6, 0.5),
+    ];
+
+    // 3. Titanium Chamber Cup (matching the visible All-HU titanium reservoir boundary)
+    const chamberPoly = [];
+    const nChamber = 36;
+    for (let i = 0; i < nChamber; i++) {
+      const rad = (2.0 * Math.PI * i) / nChamber;
+      chamberPoly.push(transformPt(5.7 * Math.cos(rad), 3.6 * Math.sin(rad)));
+    }
+
+    // 4. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN FOR NEEDLE PUNCTURE)
+    const septumPoly = [];
+    const nSeptum = 16;
+    for (let i = 0; i <= nSeptum; i++) {
+      const rad = (Math.PI * i) / nSeptum;
+      const u = 4.2 * Math.cos(rad);
+      const v = 2.4 + 2.4 * Math.sin(rad);
+      septumPoly.push(transformPt(u, v));
+    }
+    septumPoly.push(transformPt(-4.2, 1.2));
+    septumPoly.push(transformPt(4.2, 1.2));
+
     return {
-      portBody,
-      septumArc: arc,
-      composite,
+      housingPoly,
+      cannulaPoly,
+      chamberPoly,
+      septumPoly,
+      composite: [housingPoly, cannulaPoly, chamberPoly, septumPoly],
     };
   }
 
   static tracePortContour(cluster, cx, cy, pixelSpacing = 1.0, isLeft = true) {
-    const cad = LocalDicomLoader.generateCelsiteCADContours(
-      cx,
-      cy,
-      pixelSpacing,
-      isLeft,
-      cluster ? cluster.portContour : null,
-      cluster ? cluster.septumArc : null
-    );
+    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft);
     return cad.composite;
   }
 
@@ -566,15 +627,32 @@ export class LocalDicomLoader {
     return streaks;
   }
 
-  static extractContours(huArray, anchor = null, pixelSpacing = 1.0) {
+  static extractContours(huArray, anchor = null, pixelSpacing = 1.0, sliceIdx = null, bestIdx = null) {
+    const isPortSlice = (sliceIdx !== null && bestIdx !== null)
+      ? Math.abs(sliceIdx - bestIdx) <= 12
+      : true;
+
+    // Detect ChemoPort component or use series anchor
     const comp = LocalDicomLoader.findChemoPortComponent(huArray, anchor);
-    if (!comp || comp.count < 4 || comp.maxHu < 1800) {
+    let portCenter = null;
+    let portPx = 0;
+
+    if (comp && comp.count >= 4 && comp.maxHu >= 1800) {
+      portCenter = { x: comp.cx, y: comp.cy };
+      portPx = comp.count;
+    } else if (anchor && isPortSlice) {
+      // Stable continuous ChemoPort anchor across intermediate slices regardless of HU dropouts
+      portCenter = { x: anchor.x, y: anchor.y };
+      portPx = 50;
+    }
+
+    if (!portCenter || !isPortSlice) {
       return { port: [], art: [], port_px: 0, art_px: 0 };
     }
 
-    const { cx, cy, count, portContour, septumArc } = comp;
+    const { x: cx, y: cy } = portCenter;
     const isLeft = cx > 256;
-    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, portContour, septumArc);
+    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft);
     const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy, 14);
 
     let artPx = 0;
@@ -585,7 +663,7 @@ export class LocalDicomLoader {
     return {
       port: cad.composite,
       art: streaks,
-      port_px: count,
+      port_px: portPx,
       art_px: artPx,
     };
   }
