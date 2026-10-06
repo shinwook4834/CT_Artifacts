@@ -302,26 +302,75 @@ export class LocalDicomLoader {
     }
 
     if (bestCluster && bestCluster.cluster) {
-      let sumCoreX = 0, sumCoreY = 0, coreCount = 0;
+      // 1. All-HU Adaptive Titanium Core Isolation
+      // Pure titanium HU reaches 15,000 ~ 28,000 HU. Beam hardening streak blooming is <= 2500 HU.
+      const tiThresh = Math.max(3500, bestCluster.maxHu * 0.30);
+      let sumWeightedX = 0, sumWeightedY = 0, sumWeights = 0;
+      let tiCount = 0;
+
       for (const pt of bestCluster.cluster) {
-        if (pt.val >= 2200) {
-          sumCoreX += pt.x;
-          sumCoreY += pt.y;
-          coreCount++;
+        if (pt.val >= tiThresh) {
+          const w = Math.max(1, pt.val - tiThresh + 1);
+          sumWeightedX += pt.x * w;
+          sumWeightedY += pt.y * w;
+          sumWeights += w;
+          tiCount++;
         }
       }
-      if (coreCount >= 4) {
-        bestCluster.cx = sumCoreX / coreCount;
-        bestCluster.cy = sumCoreY / coreCount;
+
+      if (tiCount >= 4 && sumWeights > 0) {
+        bestCluster.cx = sumWeightedX / sumWeights;
+        bestCluster.cy = sumWeightedY / sumWeights;
+      } else {
+        let sumCoreX = 0, sumCoreY = 0, coreCount = 0;
+        for (const pt of bestCluster.cluster) {
+          if (pt.val >= 2200) {
+            sumCoreX += pt.x;
+            sumCoreY += pt.y;
+            coreCount++;
+          }
+        }
+        if (coreCount >= 4) {
+          bestCluster.cx = sumCoreX / coreCount;
+          bestCluster.cy = sumCoreY / coreCount;
+        }
+      }
+
+      // 2. Extract Exact Titanium Chamber Contour directly from All-HU data (Radial boundary sweep)
+      const tiContour = [];
+      const numRays = 28;
+      const tcx = bestCluster.cx;
+      const tcy = bestCluster.cy;
+      for (let i = 0; i < numRays; i++) {
+        const deg = (360.0 * i) / numRays;
+        const rad = (deg * Math.PI) / 180.0;
+        const cosA = Math.cos(rad);
+        const sinA = Math.sin(rad);
+        let maxR = 0;
+        for (let r = 1.0; r <= 16.0; r += 0.25) {
+          const px = Math.round(tcx + r * cosA);
+          const py = Math.round(tcy + r * sinA);
+          if (px >= 0 && px < w && py >= 0 && py < w) {
+            if (huArray[py * w + px] >= tiThresh) {
+              maxR = r;
+            }
+          }
+        }
+        if (maxR > 0) {
+          tiContour.push([
+            Math.round(tcx + maxR * cosA),
+            Math.round(tcy + maxR * sinA),
+          ]);
+        }
+      }
+      if (tiContour.length >= 8) {
+        bestCluster.titaniumContour = tiContour;
       }
     }
 
     return bestCluster;
   }
 
-  /**
-   * Generates exact 2D vector contours based on the official B. Braun Celsite® CAD blueprint
-   * (PDF 6050179 & Brochure & specimen photo IMG_4763.JPG).
   /**
    * Generates exact anatomical cross-section contours of the B. Braun Celsite® port
    * on the Axial CT plane (matching user specification and clinical implantation anatomy).
@@ -333,7 +382,7 @@ export class LocalDicomLoader {
    * - Outflow cannula exiting medially towards the subclavian vein catheter.
    * - Low-profile nose tapering laterally into subcutaneous fat tissue.
    */
-  static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true) {
+  static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true, actualChamber = null) {
     const pxScale = 1.0 / (pixelSpacing || 1.0);
     const theta = (26.5 * Math.PI) / 180.0;
 
@@ -384,16 +433,21 @@ export class LocalDicomLoader {
       transformPt(0.0, vBase),
     ];
 
-    // 2. Titanium Chamber Cup (solid metal core)
-    const chamberPoly = [
-      transformPt(-rCh, vBase + 0.5),
-      transformPt(-rCh, vTop - 1.0),
-      transformPt(-rSep, vTop - 0.7),
-      transformPt(rSep, vTop - 0.7),
-      transformPt(rCh, vTop - 1.0),
-      transformPt(rCh, vBase + 0.5),
-      transformPt(0.0, vBase + 0.5),
-    ];
+    // 2. Titanium Chamber Cup (fitted directly to All-HU titanium boundary when available)
+    let chamberPoly;
+    if (actualChamber && actualChamber.length >= 6) {
+      chamberPoly = actualChamber;
+    } else {
+      chamberPoly = [
+        transformPt(-rCh, vBase + 0.5),
+        transformPt(-rCh, vTop - 1.0),
+        transformPt(-rSep, vTop - 0.7),
+        transformPt(rSep, vTop - 0.7),
+        transformPt(rCh, vTop - 1.0),
+        transformPt(rCh, vBase + 0.5),
+        transformPt(0.0, vBase + 0.5),
+      ];
+    }
 
     // 3. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN FOR NEEDLE PUNCTURE!)
     const septumPoly = [
@@ -423,7 +477,7 @@ export class LocalDicomLoader {
   }
 
   static tracePortContour(cluster, cx, cy, pixelSpacing = 1.0, isLeft = true) {
-    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft);
+    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, cluster ? cluster.titaniumContour : null);
     return cad.composite;
   }
 
@@ -493,9 +547,9 @@ export class LocalDicomLoader {
       return { port: [], art: [], port_px: 0, art_px: 0 };
     }
 
-    const { cx, cy, count } = comp;
+    const { cx, cy, count, titaniumContour } = comp;
     const isLeft = cx > 256;
-    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft);
+    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, titaniumContour);
     const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy, 14);
 
     let artPx = 0;

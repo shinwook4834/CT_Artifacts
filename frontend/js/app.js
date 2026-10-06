@@ -3,13 +3,13 @@
  * Dual-Mode: Uses FastAPI Backend (16GB RAM) if available, or 100% Client-Side Static if hosted on HF Static Space.
  */
 
-import { api } from "./api.js?v=2.1.9";
-import { LocalDicomLoader } from "./dicom-local.js?v=2.1.9";
-import { MedicalViewport } from "./viewport.js?v=2.1.9";
-import { ContourOverlay } from "./inspection.js?v=2.1.9";
-import { InspectionGlassComparator } from "./comparator.js?v=2.1.9";
-import { aiEngine } from "./onnx-mar.js?v=2.1.9";
-import { ProfileChart } from "./export-view.js?v=2.1.9";
+import { api } from "./api.js?v=2.2.0";
+import { LocalDicomLoader } from "./dicom-local.js?v=2.2.0";
+import { MedicalViewport } from "./viewport.js?v=2.2.0";
+import { ContourOverlay } from "./inspection.js?v=2.2.0";
+import { InspectionGlassComparator } from "./comparator.js?v=2.2.0";
+import { aiEngine } from "./onnx-mar.js?v=2.2.0";
+import { ProfileChart } from "./export-view.js?v=2.2.0";
 
 class AppState {
   constructor() {
@@ -360,8 +360,8 @@ function initPresets() {
     "preset-soft": [40, 350],
     "preset-bone": [400, 1800],
     "preset-lung": [-600, 1500],
-    "preset-metal": [1200, 4000],
-    "preset-all": [10760, 33530],
+    "preset-metal": [3500, 8000],
+    "preset-all": [11000, 30000],
   };
 
   Object.entries(presets).forEach(([id, [wc, ww]]) => {

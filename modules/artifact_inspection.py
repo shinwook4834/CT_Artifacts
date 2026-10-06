@@ -282,8 +282,33 @@ def detect_approach_a_slice_contours(
     if has_port and port_center is not None:
         from modules.celsite_cad_model import generate_celsite_contours_px
         py, px = port_center
+        # Extract pure titanium core from All-HU data (HU >= max(3500, max_hu * 0.30))
+        sub_r = 30
+        y0, y1 = max(0, int(py - sub_r)), min(h, int(py + sub_r))
+        x0, x1 = max(0, int(px - sub_r)), min(w, int(px + sub_r))
+        sub_hu = hu_array[y0:y1, x0:x1]
+        max_hu = float(np.max(sub_hu)) if sub_hu.size > 0 else 0.0
+        ti_contour = None
+        if max_hu >= 3000.0:
+            ti_thresh = max(3500.0, max_hu * 0.30)
+            ti_mask = (hu_array >= ti_thresh).astype(np.uint8)
+            num_l, lbls, stats, cents = cv2.connectedComponentsWithStats(ti_mask)
+            best_ti = None
+            min_d = 999.0
+            for i in range(1, num_l):
+                d = np.hypot(cents[i][0] - px, cents[i][1] - py)
+                if d < min_d and stats[i, cv2.CC_STAT_AREA] >= 4:
+                    min_d = d
+                    best_ti = i
+            if best_ti is not None and min_d < 25.0:
+                px, py = float(cents[best_ti][0]), float(cents[best_ti][1])
+                comp_ti = (lbls == best_ti).astype(np.uint8)
+                cnts_ti, _ = cv2.findContours(comp_ti, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if cnts_ti and len(cnts_ti[0]) >= 4:
+                    ti_contour = cnts_ti[0].reshape(-1, 2).tolist()
+
         angle_deg = 198.5 if px > w / 2.0 else 341.5
-        c_cnts = generate_celsite_contours_px(px, py, angle_deg, pixel_spacing, size="standard")
+        c_cnts = generate_celsite_contours_px(px, py, angle_deg, pixel_spacing, size="standard", actual_chamber=ti_contour)
         port_polys = c_cnts["composite"]
     elif has_port and np.any(port_mask):
         cnts_p, _ = cv2.findContours(port_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)

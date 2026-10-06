@@ -217,16 +217,19 @@ def generate_celsite_axial_contours_px(
         pt(0.0, v_base),
     ]
 
-    # 2. Titanium Chamber Cup (solid metal core)
-    chamber = [
-        pt(-r_ch, v_base + 0.5 * scale_ratio),
-        pt(-r_ch, v_top - 1.0 * scale_ratio),
-        pt(-r_sep, v_top - 0.7 * scale_ratio),
-        pt(r_sep, v_top - 0.7 * scale_ratio),
-        pt(r_ch, v_top - 1.0 * scale_ratio),
-        pt(r_ch, v_base + 0.5 * scale_ratio),
-        pt(0.0, v_base + 0.5 * scale_ratio),
-    ]
+    # 2. Titanium Chamber Cup (solid metal core or extracted All-HU titanium boundary)
+    if actual_chamber is not None and len(actual_chamber) >= 4:
+        chamber = actual_chamber
+    else:
+        chamber = [
+            pt(-r_ch, v_base + 0.5 * scale_ratio),
+            pt(-r_ch, v_top - 1.0 * scale_ratio),
+            pt(-r_sep, v_top - 0.7 * scale_ratio),
+            pt(r_sep, v_top - 0.7 * scale_ratio),
+            pt(r_ch, v_top - 1.0 * scale_ratio),
+            pt(r_ch, v_base + 0.5 * scale_ratio),
+            pt(0.0, v_base + 0.5 * scale_ratio),
+        ]
 
     # 3. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN FOR NEEDLE PUNCTURE!)
     septum = [
@@ -263,14 +266,17 @@ def generate_celsite_contours_px(
     pixel_spacing: Union[float, Tuple[float, float]] = 1.0,
     size: str = "standard",
     include_details: bool = True,
-    view: str = "axial"
+    view: str = "axial",
+    actual_chamber: Optional[List[List[int]]] = None
 ) -> Dict[str, List[List[int]]]:
     """Transforms the B. Braun Celsite CAD model into exact 2D pixel coordinates for CT viewer overlay.
     Defaults to the anatomical Axial cross-section where the silicone septum faces the skin for needle puncture.
     """
     if view == "axial" or angle_deg is None or abs(angle_deg - 198.5) < 2.0 or abs(angle_deg - 341.5) < 2.0:
         is_left = cx > 256.0
-        return generate_celsite_axial_contours_px(cx, cy, pixel_spacing, is_left_hemi=is_left, size=size, include_details=include_details)
+        return generate_celsite_axial_contours_px(
+            cx, cy, pixel_spacing, is_left_hemi=is_left, size=size, include_details=include_details, actual_chamber=actual_chamber
+        )
 
     specs = CELSITE_PRESETS.get(size, CELSITE_PRESETS["standard"])
     if isinstance(pixel_spacing, (tuple, list)):

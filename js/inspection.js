@@ -94,12 +94,12 @@ export class ContourOverlay {
           ctx.shadowColor = "#38bdf8";
           ctx.shadowBlur = 10 / this.zoom;
         } else if (pIdx === 1 && this.contours.port.length >= 2) {
-          // 2. Titanium Chamber Cup
-          ctx.strokeStyle = "#94a3b8";
-          ctx.fillStyle = "rgba(148, 163, 184, 0.28)";
-          ctx.lineWidth = 2.0 / this.zoom;
-          ctx.shadowColor = "#64748b";
-          ctx.shadowBlur = 6 / this.zoom;
+          // 2. Titanium Chamber Cup (All-HU Titanium Boundary Fit)
+          ctx.strokeStyle = "#e2e8f0";
+          ctx.fillStyle = "rgba(226, 232, 240, 0.35)";
+          ctx.lineWidth = 2.2 / this.zoom;
+          ctx.shadowColor = "#94a3b8";
+          ctx.shadowBlur = 8 / this.zoom;
         } else if (pIdx === 3) {
           // 4. Outflow Cannula / Stem towards catheter
           ctx.strokeStyle = "#0d9488";
