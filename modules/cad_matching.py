@@ -85,7 +85,7 @@ CAD_PRESET_REGISTRY: Dict[str, UniversalChemoPortPrior] = {
         septum_diameter_ratio=0.45,
     ),
     "celsite_standard": UniversalChemoPortPrior(
-        name="B. Braun Celsite® Access Port",
+        name="B. Braun Celsite® Access Port (Standard)",
         shell_density_g_cm3=4.43,
         septum_density_g_cm3=1.15,
         chamber_density_g_cm3=1.00,
@@ -94,6 +94,17 @@ CAD_PRESET_REGISTRY: Dict[str, UniversalChemoPortPrior] = {
         chamber_hu=30.0,
         wall_thickness_ratio=0.20,
         septum_diameter_ratio=0.48,
+    ),
+    "celsite_small": UniversalChemoPortPrior(
+        name="B. Braun Celsite® Access Port (Small)",
+        shell_density_g_cm3=4.43,
+        septum_density_g_cm3=1.15,
+        chamber_density_g_cm3=1.00,
+        shell_hu=4800.0,
+        septum_hu=130.0,
+        chamber_hu=30.0,
+        wall_thickness_ratio=0.18,
+        septum_diameter_ratio=0.44,
     ),
 }
 
@@ -311,51 +322,69 @@ def generate_cad_prior_compartments(
     dy_mm, dx_mm = float(geom.pixel_spacing[0]), float(geom.pixel_spacing[1])
     Y, X = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
 
-    # 1. Parametric CAD Reservoir Body (consistent across slices)
-    cad_body = np.zeros((h, w), dtype=np.uint8)
-    box = ((cx, cy), (geom.minor_axis_px * 2.0, geom.major_axis_px * 2.0), geom.angle_deg)
-    cv2.ellipse(cad_body, box, 1, -1)
+    is_celsite = "celsite" in getattr(prior, "name", "").lower()
+    if is_celsite:
+        from modules.celsite_cad_model import generate_celsite_contours_px
+        size_key = "small" if "small" in getattr(prior, "name", "").lower() else "standard"
+        celsite_angle = 198.5 if cx > w / 2.0 else 341.5
+        c_cnts = generate_celsite_contours_px(cx, cy, celsite_angle, geom.pixel_spacing, size=size_key)
 
-    # 2. Outflow Locking Collar / Catheter Connection Stem
-    # Catheter connects to lateral anterior aspect of port (around y=163, x=341)
-    if catheter_mask is None and hu_array is not None:
-        catheter_mask = detect_catheter_wire(hu_array, port_center=(cy, cx))
-    elif catheter_mask is None:
-        catheter_mask = np.zeros((h, w), dtype=bool)
+        cad_body = np.zeros((h, w), dtype=np.uint8)
+        cv2.fillPoly(cad_body, [np.array(c_cnts["housing"], dtype=np.int32)], 1)
 
-    stem_mask = np.zeros((h, w), dtype=bool)
-    has_nearby_catheter = np.any(catheter_mask & (Y <= 170) & (X <= 348))
-    if has_nearby_catheter or (hu_array is not None and np.any(hu_array[162:172, 337:346] >= 900.0)):
-        target_y, target_x = 163.0, 341.0
-        vy = target_y - cy
-        vx = target_x - cx
-        vlen = np.sqrt(vy**2 + vx**2)
-        if vlen > 0:
-            uy, ux = vy / vlen, vx / vlen
-            ray_dists = np.linspace(0, vlen, 100)
-            ray_ys = np.clip((cy + ray_dists * uy).astype(int), 0, h - 1)
-            ray_xs = np.clip((cx + ray_dists * ux).astype(int), 0, w - 1)
-            in_body = cad_body[ray_ys, ray_xs] == 1
-            exit_idx = np.where(in_body)[0][-1] if np.any(in_body) else int(geom.minor_axis_px)
-            start_d = max(0.0, ray_dists[exit_idx] - 1.5)
+        ch_img = np.zeros((h, w), dtype=np.uint8)
+        cv2.fillPoly(ch_img, [np.array(c_cnts["chamber"], dtype=np.int32)], 1)
 
-            collar_img = np.zeros((h, w), dtype=np.uint8)
-            start_pt = (int(round(cx + start_d * ux)), int(round(cy + start_d * uy)))
-            end_pt = (int(round(target_x)), int(round(target_y)))
-            cv2.line(collar_img, start_pt, end_pt, 1, thickness=4)
-            stem_mask = collar_img == 1
+        sep_img = np.zeros((h, w), dtype=np.uint8)
+        cv2.fillPoly(sep_img, [np.array(c_cnts["septum"], dtype=np.int32)], 1)
 
-    full_port_mask = (cad_body == 1) | stem_mask
+        can_img = np.zeros((h, w), dtype=np.uint8)
+        cv2.fillPoly(can_img, [np.array(c_cnts["cannula"], dtype=np.int32)], 1)
 
-    # 3. Multi-density compartments:
-    # Titanium casing wall thickness ~ 2.0 mm
-    wall_px = max(1.5, 2.0 / min(dy_mm, dx_mm))
-    dist_in = distance_transform_edt(cad_body == 1)
-    inner = (dist_in > wall_px) & (cad_body == 1)
+        stem_mask = can_img == 1
+        full_port_mask = (cad_body == 1) | stem_mask
+        septum_mask = sep_img == 1
+        chamber_mask = (ch_img == 1) & (~septum_mask)
+    else:
+        # Generic Parametric CAD Reservoir Body fallback
+        cad_body = np.zeros((h, w), dtype=np.uint8)
+        box = ((cx, cy), (geom.minor_axis_px * 2.0, geom.major_axis_px * 2.0), geom.angle_deg)
+        cv2.ellipse(cad_body, box, 1, -1)
 
-    # Septum: silicone puncture dome on anterior face (facing skin)
-    septum_mask = inner & ((Y - cy) <= -0.15 * (X - cx))
-    chamber_mask = inner & (~septum_mask)
+        if catheter_mask is None and hu_array is not None:
+            catheter_mask = detect_catheter_wire(hu_array, port_center=(cy, cx))
+        elif catheter_mask is None:
+            catheter_mask = np.zeros((h, w), dtype=bool)
+
+        stem_mask = np.zeros((h, w), dtype=bool)
+        has_nearby_catheter = np.any(catheter_mask & (Y <= 170) & (X <= 348))
+        if has_nearby_catheter or (hu_array is not None and np.any(hu_array[162:172, 337:346] >= 900.0)):
+            target_y, target_x = 163.0, 341.0
+            vy = target_y - cy
+            vx = target_x - cx
+            vlen = np.sqrt(vy**2 + vx**2)
+            if vlen > 0:
+                uy, ux = vy / vlen, vx / vlen
+                ray_dists = np.linspace(0, vlen, 100)
+                ray_ys = np.clip((cy + ray_dists * uy).astype(int), 0, h - 1)
+                ray_xs = np.clip((cx + ray_dists * ux).astype(int), 0, w - 1)
+                in_body = cad_body[ray_ys, ray_xs] == 1
+                exit_idx = np.where(in_body)[0][-1] if np.any(in_body) else int(geom.minor_axis_px)
+                start_d = max(0.0, ray_dists[exit_idx] - 1.5)
+
+                collar_img = np.zeros((h, w), dtype=np.uint8)
+                start_pt = (int(round(cx + start_d * ux)), int(round(cy + start_d * uy)))
+                end_pt = (int(round(target_x)), int(round(target_y)))
+                cv2.line(collar_img, start_pt, end_pt, 1, thickness=4)
+                stem_mask = collar_img == 1
+
+        full_port_mask = (cad_body == 1) | stem_mask
+        wall_px = max(1.5, 2.0 / min(dy_mm, dx_mm))
+        dist_in = distance_transform_edt(cad_body == 1)
+        inner = (dist_in > wall_px) & (cad_body == 1)
+
+        septum_mask = inner & ((Y - cy) <= -0.15 * (X - cx))
+        chamber_mask = inner & (~septum_mask)
 
     # Ensure valid compartments
     if not np.any(septum_mask) and np.any(full_port_mask):

@@ -277,9 +277,15 @@ def detect_approach_a_slice_contours(
         return empty_contours, stats, empty_masks
 
     # 7. Extract Smooth Vector Polygon Contours
-    # Port Contours (Rose Red)
+    # Port Contours (B. Braun Celsite® CAD Model: Housing Delta + Titanium Chamber + Outflow Stem)
     port_polys = []
-    if has_port and np.any(port_mask):
+    if has_port and port_center is not None:
+        from modules.celsite_cad_model import generate_celsite_contours_px
+        py, px = port_center
+        angle_deg = 198.5 if px > w / 2.0 else 341.5
+        c_cnts = generate_celsite_contours_px(px, py, angle_deg, pixel_spacing, size="standard")
+        port_polys = c_cnts["composite"]
+    elif has_port and np.any(port_mask):
         cnts_p, _ = cv2.findContours(port_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         for c in cnts_p:
             if cv2.contourArea(c) >= 4 or len(c) >= 3:

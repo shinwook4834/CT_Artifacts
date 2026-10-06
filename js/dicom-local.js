@@ -58,9 +58,10 @@ export class LocalDicomLoader {
     // Auto-detect ChemoPort slice and 3D spatial anchor across both Right & Left hemispheres
     const { bestIdx, anchor } = LocalDicomLoader.findSeriesChemoPortAnchor(slices);
 
-    // Extract robust vector contours for all slices
+    // Extract robust B. Braun Celsite CAD vector contours for all slices
     const contoursMap = slices.map((sl) => {
-      return LocalDicomLoader.extractContours(sl.hu, anchor);
+      const ps = sl.pixelSpacing ? sl.pixelSpacing[0] : (slices[0].pixelSpacing ? slices[0].pixelSpacing[0] : 1.0);
+      return LocalDicomLoader.extractContours(sl.hu, anchor, ps);
     });
 
     return {
@@ -300,68 +301,110 @@ export class LocalDicomLoader {
       }
     }
 
+    if (bestCluster && bestCluster.cluster) {
+      let sumCoreX = 0, sumCoreY = 0, coreCount = 0;
+      for (const pt of bestCluster.cluster) {
+        if (pt.val >= 2200) {
+          sumCoreX += pt.x;
+          sumCoreY += pt.y;
+          coreCount++;
+        }
+      }
+      if (coreCount >= 4) {
+        bestCluster.cx = sumCoreX / coreCount;
+        bestCluster.cy = sumCoreY / coreCount;
+      }
+    }
+
     return bestCluster;
   }
 
-  static tracePortContour(cluster, cx, cy) {
-    const set = new Set();
-    for (const p of cluster) {
-      set.add(p.y * 512 + p.x);
+  /**
+   * Generates exact 2D vector contours based on the official B. Braun Celsite® CAD blueprint
+   * (PDF 6050179 & Brochure & specimen photo IMG_4763.JPG).
+   *
+   * Dimensions: 32 mm Length x 27 mm Width x 12.5 mm Height
+   * Septum Diameter: Ø 12.2 mm, Titanium Chamber Outer Diameter: Ø 14.8 mm
+   * Suture Wings with Eyelets Ø 2.0 mm, Outflow Cannula Ø 2.2 mm
+   */
+  static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true) {
+    const pxScale = 1.0 / (pixelSpacing || 1.0);
+    // Longitudinal axis angle: nose vector points away from medial vein into lateral pectoral pocket
+    const angleDeg = isLeftHemisphere ? 198.5 : 341.5;
+    const rad = (angleDeg * Math.PI) / 180.0;
+    const cosA = Math.cos(rad);
+    const sinA = Math.sin(rad);
+
+    // Coordinate basis: +V along angleDeg (nose), +U perpendicular (suture wings)
+    const vx = cosA, vy = sinA;
+    const ux = -sinA, uy = cosA;
+
+    const transformPt = (uMm, vMm) => {
+      const uPx = uMm * pxScale;
+      const vPx = vMm * pxScale;
+      return [
+        Math.round(cx + uPx * ux + vPx * vx),
+        Math.round(cy + uPx * uy + vPx * vy),
+      ];
+    };
+
+    // 1. Outer Epoxy Housing (Parametric Delta Teardrop Profile)
+    const housingPoly = [];
+    // Apex nose arc (radius 4.8 mm, center at (0, 11.2))
+    const nNose = 12;
+    for (let i = 0; i <= nNose; i++) {
+      const deg = 35.0 + (110.0 * i) / nNose;
+      const r = (deg * Math.PI) / 180.0;
+      housingPoly.push(transformPt(4.8 * Math.cos(r), 11.2 + 4.8 * Math.sin(r)));
+    }
+    // Left flank to left suture wing (radius 3.6 mm, center at (-10.0, -9.2))
+    const nWing = 12;
+    for (let i = 0; i <= nWing; i++) {
+      const deg = 145.0 + (110.0 * i) / nWing;
+      const r = (deg * Math.PI) / 180.0;
+      housingPoly.push(transformPt(-10.0 + 3.6 * Math.cos(r), -9.2 + 3.6 * Math.sin(r)));
+    }
+    // Base notch (outflow indentation around cannula exit)
+    housingPoly.push(transformPt(-4.2, -12.6));
+    housingPoly.push(transformPt(-1.5, -13.2));
+    housingPoly.push(transformPt(0.0, -13.2));
+    housingPoly.push(transformPt(1.5, -13.2));
+    housingPoly.push(transformPt(4.2, -12.6));
+    // Right wing arc (radius 3.6 mm, center at (10.0, -9.2))
+    for (let i = 0; i <= nWing; i++) {
+      const deg = 285.0 + (110.0 * i) / nWing;
+      const r = (deg * Math.PI) / 180.0;
+      housingPoly.push(transformPt(10.0 + 3.6 * Math.cos(r), -9.2 + 3.6 * Math.sin(r)));
     }
 
-    const numAngles = 36;
-    const rawRadii = new Float32Array(numAngles);
-
-    for (let a = 0; a < numAngles; a++) {
-      const deg = a * (360 / numAngles);
-      const rad = (deg * Math.PI) / 180;
-      const cosA = Math.cos(rad);
-      const sinA = Math.sin(rad);
-
-      let maxR = 0;
-      for (let r = 1.0; r <= 42.0; r += 0.75) {
-        const qx = Math.round(cx + r * cosA);
-        const qy = Math.round(cy + r * sinA);
-        if (set.has(qy * 512 + qx)) {
-          maxR = r;
-        }
-      }
-      rawRadii[a] = maxR;
+    // 2. Titanium Chamber Outer Ring (Ø 14.8 mm, radius 7.4 mm)
+    const chamberPoly = [];
+    const nChamber = 32;
+    for (let i = 0; i < nChamber; i++) {
+      const deg = (360.0 * i) / nChamber;
+      const r = (deg * Math.PI) / 180.0;
+      chamberPoly.push(transformPt(7.4 * Math.cos(r), 7.4 * Math.sin(r)));
     }
 
-    for (let a = 0; a < numAngles; a++) {
-      if (rawRadii[a] <= 0) {
-        let prevVal = 0, nextVal = 0;
-        for (let step = 1; step < numAngles; step++) {
-          const prevIdx = (a - step + numAngles) % numAngles;
-          if (rawRadii[prevIdx] > 0 && !prevVal) prevVal = rawRadii[prevIdx];
-          const nextIdx = (a + step) % numAngles;
-          if (rawRadii[nextIdx] > 0 && !nextVal) nextVal = rawRadii[nextIdx];
-          if (prevVal && nextVal) break;
-        }
-        rawRadii[a] = (prevVal && nextVal) ? (prevVal + nextVal) / 2 : (prevVal || nextVal || 6);
-      }
-    }
+    // 3. Titanium Cannula & Catheter Connector Stem
+    const cannulaPoly = [
+      transformPt(-1.1, -7.4),
+      transformPt(-1.1, -22.5),
+      transformPt(1.1, -22.5),
+      transformPt(1.1, -7.4),
+    ];
 
-    const smoothedRadii = new Float32Array(numAngles);
-    for (let a = 0; a < numAngles; a++) {
-      const prev = rawRadii[(a - 1 + numAngles) % numAngles];
-      const curr = rawRadii[a];
-      const next = rawRadii[(a + 1) % numAngles];
-      smoothedRadii[a] = 0.25 * prev + 0.5 * curr + 0.25 * next + 1.8;
-    }
+    return {
+      housingPoly,
+      chamberPoly,
+      cannulaPoly,
+      composite: [housingPoly, chamberPoly, cannulaPoly],
+    };
+  }
 
-    const polygon = [];
-    for (let a = 0; a < numAngles; a++) {
-      const deg = a * (360 / numAngles);
-      const rad = (deg * Math.PI) / 180;
-      const r = smoothedRadii[a];
-      const px = Math.round(cx + r * Math.cos(rad));
-      const py = Math.round(cy + r * Math.sin(rad));
-      polygon.push([px, py]);
-    }
-
-    return polygon;
+  static tracePortContour(cluster, cx, cy, pixelSpacing = 1.0, isLeft = true) {
+    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft);
+    return cad.composite;
   }
 
   static detectStreaks(huArray, cx, cy, portRadius = 15) {
@@ -424,15 +467,16 @@ export class LocalDicomLoader {
     return streaks;
   }
 
-  static extractContours(huArray, anchor = null) {
+  static extractContours(huArray, anchor = null, pixelSpacing = 1.0) {
     const comp = LocalDicomLoader.findChemoPortComponent(huArray, anchor);
-    if (!comp || comp.count < 4) {
+    if (!comp || comp.count < 4 || comp.maxHu < 1800) {
       return { port: [], art: [], port_px: 0, art_px: 0 };
     }
 
-    const { cluster, cx, cy, count } = comp;
-    const portPoly = LocalDicomLoader.tracePortContour(cluster, cx, cy);
-    const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy);
+    const { cx, cy, count } = comp;
+    const isLeft = cx > 256;
+    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft);
+    const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy, 14);
 
     let artPx = 0;
     for (const s of streaks) {
@@ -440,7 +484,7 @@ export class LocalDicomLoader {
     }
 
     return {
-      port: portPoly && portPoly.length >= 3 ? [portPoly] : [],
+      port: cad.composite,
       art: streaks,
       port_px: count,
       art_px: artPx,

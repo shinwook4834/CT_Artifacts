@@ -79,17 +79,37 @@ export class ContourOverlay {
       ctx.restore();
     }
 
-    // 2. Draw ChemoPort Implant Contour (Neon Teal / Mint)
+    // 2. Draw ChemoPort Implant Contour (B. Braun Celsite® CAD Model: Housing Delta + Titanium Core + Cannula)
     if (this.showPort && this.contours.port && this.contours.port.length > 0) {
       ctx.save();
-      ctx.strokeStyle = "#0d9488";
-      ctx.fillStyle = "rgba(13, 148, 136, 0.22)";
-      ctx.lineWidth = 2.2 / this.zoom;
-      ctx.shadowColor = "#2dd4bf";
-      ctx.shadowBlur = 8 / this.zoom;
-
-      for (const poly of this.contours.port) {
+      for (let pIdx = 0; pIdx < this.contours.port.length; pIdx++) {
+        const poly = this.contours.port[pIdx];
         if (!poly || poly.length < 3) continue;
+
+        ctx.save();
+        if (pIdx === 1) {
+          // Inner Titanium Chamber & Septum ring: luminous mint/teal core
+          ctx.strokeStyle = "#14b8a6";
+          ctx.fillStyle = "rgba(45, 212, 191, 0.32)";
+          ctx.lineWidth = 2.4 / this.zoom;
+          ctx.shadowColor = "#2dd4bf";
+          ctx.shadowBlur = 10 / this.zoom;
+        } else if (pIdx === 2) {
+          // Outflow Titanium Cannula / Catheter Connection Stem
+          ctx.strokeStyle = "#0d9488";
+          ctx.fillStyle = "rgba(13, 148, 136, 0.40)";
+          ctx.lineWidth = 2.0 / this.zoom;
+          ctx.shadowColor = "#2dd4bf";
+          ctx.shadowBlur = 6 / this.zoom;
+        } else {
+          // Outer Epoxy Delta Housing Profile
+          ctx.strokeStyle = "#0d9488";
+          ctx.fillStyle = "rgba(13, 148, 136, 0.18)";
+          ctx.lineWidth = 2.2 / this.zoom;
+          ctx.shadowColor = "#2dd4bf";
+          ctx.shadowBlur = 8 / this.zoom;
+        }
+
         ctx.beginPath();
         ctx.moveTo(poly[0][0], poly[0][1]);
         for (let i = 1; i < poly.length; i++) {
@@ -98,6 +118,7 @@ export class ContourOverlay {
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
+        ctx.restore();
       }
       ctx.restore();
     }
