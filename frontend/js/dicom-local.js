@@ -463,9 +463,9 @@ export class LocalDicomLoader {
    * - Outflow cannula exiting medially towards the subclavian vein catheter.
    * - Low-profile nose tapering laterally into subcutaneous fat tissue.
    */
-  static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true, size = 'standard', actualTiContour = null) {
+  static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true, size = 'standard') {
     const pxScale = 1.0 / (pixelSpacing || 1.0);
-    const theta = (18.5 * Math.PI) / 180.0;
+    const theta = (18.0 * Math.PI) / 180.0;
 
     let tx, ty, nx, ny;
     if (isLeftHemisphere) {
@@ -494,106 +494,91 @@ export class LocalDicomLoader {
       ];
     };
 
-    // Official B. Braun Celsite® Engineering Specifications
-    const isSmall = size === 'small';
-    const lengthMm = isSmall ? 26.0 : 32.0;
-    const rSep = 5.2;   // Septum radius
-    const vBase = -6.5; // seated 2mm below titanium cup base along deep pectoral muscle fascia
-    const vTop = 6.6;   // elevated anteriorly towards skin
+    // 1. Titanium Chamber Cup (All-HU Titanium Reservoir: 26-point U-cup polygon)
+    // Coincides strictly with the visible high-HU U-shape metal cup in All-HU (WL 11000 / WW 30000)
+    const uCupUV = [
+      // Outer U-rim & floor (points 0..15: hugs visible titanium boundary)
+      [-4.86,  1.37],
+      [-5.44,  0.23],
+      [-5.32, -0.78],
+      [-5.01, -1.73],
+      [-4.51, -2.31],
+      [-3.47, -2.60],
+      [-2.17, -2.70],
+      [-0.43, -2.56],
+      [ 1.66, -2.51],
+      [ 3.65, -2.18],
+      [ 5.05, -1.62],
+      [ 5.65, -0.90],
+      [ 5.54,  0.12],
+      [ 5.23,  1.07],
+      [ 4.44,  1.86],
+      [ 2.83,  2.60],
+      // Inner U-rim & reservoir cavity floor (points 16..25)
+      [ 1.90,  2.20],
+      [ 3.30,  1.20],
+      [ 3.60,  0.20],
+      [ 3.60, -0.70],
+      [ 2.30, -1.20],
+      [ 0.50, -1.30],
+      [-1.30, -1.30],
+      [-2.80, -1.10],
+      [-3.70, -0.30],
+      [-3.80,  0.80]
+    ];
+    const chamberPoly = uCupUV.map(p => transformPt(p[0], p[1]));
 
-    const uNose = lengthMm * 0.48;
-    const uBase = -lengthMm * 0.42;
+    // 2. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS ANTERIOR SKIN FOR NEEDLE PUNCTURE)
+    // Sits flush across the top aperture of the U-cup
+    const septumPoly = [];
+    const nSeptum = 16;
+    for (let i = 0; i <= nSeptum; i++) {
+      const t = i / nSeptum;
+      const u = -3.80 + (2.83 - (-3.80)) * t;
+      const vBaseInterp = 0.80 + (2.60 - 0.80) * t;
+      const v = vBaseInterp + 2.8 * Math.sin(Math.PI * t);
+      septumPoly.push(transformPt(u, v));
+    }
+    septumPoly.push(transformPt(-3.80, 0.80));
 
-    // 1. Outer Housing Profile (Standard 32 mm teardrop/wedge profile)
+    // 3. Outer Housing Body (24 mm petite Celsite profile, seated on pectoral fascia)
     const housingPoly = [];
-    // Base line seated along deep pectoral muscle fascia (-v)
-    const uStart = uBase + 2.0;
-    const uEnd = uNose - 3.0;
+    // Deep fascia base line (-v)
     for (let i = 0; i <= 8; i++) {
-      const u = uStart + (uEnd - uStart) * (i / 8.0);
-      const v = vBase + 0.25 * (1.0 - Math.pow(u / (lengthMm * 0.45), 2));
+      const u = -7.0 + (8.5 - (-7.0)) * (i / 8.0);
+      const v = -2.8 + 0.15 * (1.0 - Math.pow(u / 8.5, 2));
       housingPoly.push(transformPt(u, v));
     }
     // Rounded lateral nose tip in subcutaneous fat (+u)
     for (let i = 0; i <= 6; i++) {
-      const deg = -60.0 + (120.0 * i) / 6.0;
+      const deg = -90.0 + (120.0 * i) / 6.0;
       const rad = (deg * Math.PI) / 180.0;
-      const u = (uNose - 2.0) + 2.5 * Math.cos(rad);
-      const v = (vBase + 2.0) + 2.5 * Math.sin(rad);
+      const u = 8.5 + 1.5 * Math.cos(rad);
+      const v = -1.5 + 1.5 * Math.sin(rad);
       housingPoly.push(transformPt(u, v));
     }
-    // Sloping anterior face from nose up to septum crest and down to medial wing
-    housingPoly.push(transformPt(uNose * 0.6, vTop * 0.5));
-    housingPoly.push(transformPt(rSep * 1.05, vTop * 0.9));
-    housingPoly.push(transformPt(0.0, vTop));
-    housingPoly.push(transformPt(-rSep * 1.05, vTop * 0.9));
-    housingPoly.push(transformPt(uBase * 0.6, vTop * 0.4));
-    // Rounded medial wing tip (-u)
+    // Anterior sloping face (+v)
+    housingPoly.push(transformPt(7.0, 1.5));
+    housingPoly.push(transformPt(4.0, 3.5));
+    housingPoly.push(transformPt(0.0, 4.3));
+    housingPoly.push(transformPt(-3.5, 3.8));
+    housingPoly.push(transformPt(-6.0, 1.8));
+    // Medial rounded wing tip (-u)
     for (let i = 0; i <= 6; i++) {
-      const deg = 120.0 + (120.0 * i) / 6.0;
+      const deg = 90.0 + (120.0 * i) / 6.0;
       const rad = (deg * Math.PI) / 180.0;
-      const u = (uBase + 1.8) + 2.2 * Math.cos(rad);
-      const v = (vBase + 1.6) + 2.2 * Math.sin(rad);
+      const u = -7.0 + 1.5 * Math.cos(rad);
+      const v = -1.5 + 1.5 * Math.sin(rad);
       housingPoly.push(transformPt(u, v));
     }
 
-    // 2. Outflow Cannula Stem (exiting medially towards catheter/vein)
+    // 4. Outflow Cannula Stem (exiting medially towards vein catheter)
     const cannulaPoly = [
-      transformPt(-5.8, vBase * 0.2),
-      transformPt(uBase - 8.5, vBase * 0.2),
-      transformPt(uBase - 8.5, vBase * 0.2 + 2.2),
-      transformPt(-5.8, vBase * 0.2 + 2.2),
+      transformPt(-4.5, -0.6),
+      transformPt(-13.0, -0.6),
+      transformPt(-13.0,  1.4),
+      transformPt(-4.5,  1.4),
     ];
-
-    // 3. Titanium Chamber Rim (Matches the visible All-HU titanium boundary exactly)
-    let chamberPoly;
-    if (actualTiContour && actualTiContour.length >= 8) {
-      chamberPoly = actualTiContour;
-    } else {
-      // Fallback: Exact calibrated All-HU titanium U-shape cup boundary (tilted 18.5 deg)
-      chamberPoly = [
-        [Math.round((cx - 5.0) * 10) / 10, Math.round((cy - 1.4) * 10) / 10],
-        [Math.round((cx - 4.6) * 10) / 10, Math.round((cy - 2.4) * 10) / 10],
-        [Math.round((cx - 3.6) * 10) / 10, Math.round((cy - 3.3) * 10) / 10],
-        [Math.round((cx - 2.7) * 10) / 10, Math.round((cy - 3.8) * 10) / 10],
-        [Math.round((cx - 1.7) * 10) / 10, Math.round((cy - 4.1) * 10) / 10],
-        [Math.round((cx - 0.7) * 10) / 10, Math.round((cy - 4.3) * 10) / 10],
-        [Math.round((cx + 0.3) * 10) / 10, Math.round((cy - 4.2) * 10) / 10],
-        [Math.round((cx + 1.3) * 10) / 10, Math.round((cy - 3.8) * 10) / 10],
-        [Math.round((cx + 2.2) * 10) / 10, Math.round((cy - 3.2) * 10) / 10],
-        [Math.round((cx + 3.1) * 10) / 10, Math.round((cy - 2.3) * 10) / 10],
-        [Math.round((cx + 3.8) * 10) / 10, Math.round((cy - 1.3) * 10) / 10],
-        [Math.round((cx + 4.4) * 10) / 10, Math.round((cy - 0.3) * 10) / 10],
-        [Math.round((cx + 4.9) * 10) / 10, Math.round((cy + 0.7) * 10) / 10],
-        [Math.round((cx + 5.1) * 10) / 10, Math.round((cy + 1.7) * 10) / 10],
-        [Math.round((cx + 4.7) * 10) / 10, Math.round((cy + 2.4) * 10) / 10],
-        [Math.round((cx + 4.1) * 10) / 10, Math.round((cy + 3.0) * 10) / 10],
-        [Math.round((cx + 3.2) * 10) / 10, Math.round((cy + 3.6) * 10) / 10],
-        [Math.round((cx + 2.3) * 10) / 10, Math.round((cy + 4.0) * 10) / 10],
-        [Math.round((cx + 1.3) * 10) / 10, Math.round((cy + 4.3) * 10) / 10],
-        [Math.round((cx + 0.3) * 10) / 10, Math.round((cy + 4.5) * 10) / 10],
-        [Math.round((cx - 0.7) * 10) / 10, Math.round((cy + 4.5) * 10) / 10],
-        [Math.round((cx - 1.7) * 10) / 10, Math.round((cy + 4.3) * 10) / 10],
-        [Math.round((cx - 2.6) * 10) / 10, Math.round((cy + 3.9) * 10) / 10],
-        [Math.round((cx - 3.5) * 10) / 10, Math.round((cy + 3.4) * 10) / 10],
-        [Math.round((cx - 4.2) * 10) / 10, Math.round((cy + 2.6) * 10) / 10],
-        [Math.round((cx - 4.7) * 10) / 10, Math.round((cy + 1.7) * 10) / 10],
-        [Math.round((cx - 5.0) * 10) / 10, Math.round((cy + 0.6) * 10) / 10],
-        [Math.round((cx - 5.1) * 10) / 10, Math.round((cy - 0.4) * 10) / 10],
-      ];
-    }
-
-    // 4. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN FOR NEEDLE PUNCTURE)
-    const septumPoly = [];
-    const nSeptum = 16;
-    for (let i = 0; i <= nSeptum; i++) {
-      const rad = (Math.PI * i) / nSeptum;
-      const u = (rSep * 0.85) * Math.cos(rad);
-      const v = 3.6 + (vTop - 3.6) * Math.sin(rad);
-      septumPoly.push(transformPt(u, v));
-    }
-    septumPoly.push(transformPt(-rSep * 0.85, 3.6));
-    septumPoly.push(transformPt(rSep * 0.85, 3.6));
 
     return {
       housingPoly,
@@ -605,8 +590,7 @@ export class LocalDicomLoader {
   }
 
   static tracePortContour(cluster, cx, cy, pixelSpacing = 1.0, isLeft = true) {
-    const actualTi = (cluster && cluster.portContour && cluster.portContour.length >= 8) ? cluster.portContour : null;
-    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, 'standard', actualTi);
+    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, 'standard');
     return cad.composite;
   }
 
@@ -697,8 +681,7 @@ export class LocalDicomLoader {
 
     const { x: cx, y: cy } = portCenter;
     const isLeft = cx > 256;
-    const actualTi = (comp && comp.portContour && comp.portContour.length >= 8) ? comp.portContour : null;
-    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, 'standard', actualTi);
+    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, 'standard');
     const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy, 14);
 
     let artPx = 0;
