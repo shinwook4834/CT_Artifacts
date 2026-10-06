@@ -184,58 +184,71 @@ def generate_celsite_axial_contours_px(
         py = cy + (u_mm * ty) / dy_mm + (v_mm * ny) / dy_mm
         return [int(round(px)), int(round(py))]
 
-    # 1. Outer Housing Profile (Smooth teardrop/wedge axial contour)
+    # Official B. Braun Celsite® Engineering Dimensions
+    is_small = (size == "small")
+    length_mm = 26.0 if is_small else 32.0
+    r_ch = 6.0 if is_small else 7.4     # Chamber radius (Ø 12.0 mm vs Ø 14.8 mm)
+    r_sep = 4.85 if is_small else 6.1   # Septum radius (Ø 9.7 mm vs Ø 12.2 mm)
+    height_mm = 9.5 if is_small else 12.5
+
+    u_nose = length_mm * 0.48
+    u_base = -length_mm * 0.42
+    v_base = -height_mm * 0.35
+    v_top = height_mm * 0.65
+
+    # 1. Outer Housing Profile (32 mm standard teardrop/wedge profile)
     housing = []
-    for i in range(9):
-        u = -8.5 + (18.0 * i) / 8.0
-        v = -3.8 + 0.15 * (1.0 - (u / 9.0) ** 2)
+    # Base along deep pectoral muscle fascia (-v)
+    u_start = u_base + 2.0
+    u_end = u_nose - 3.0
+    for u in np.linspace(u_start, u_end, 9):
+        v = v_base + 0.25 * (1.0 - (u / (length_mm * 0.45)) ** 2)
         housing.append(pt(u, v))
 
-    for i in range(7):
-        deg = -70.0 + (140.0 * i) / 6.0
+    # Rounded lateral nose tip in subcutaneous fat (+u)
+    for deg in np.linspace(-60.0, 60.0, 7):
         rad = math.radians(deg)
-        u = 9.5 + 1.8 * math.cos(rad)
-        v = -2.0 + 1.8 * math.sin(rad)
+        u = (u_nose - 2.0) + 2.5 * math.cos(rad)
+        v = (v_base + 2.0) + 2.5 * math.sin(rad)
         housing.append(pt(u, v))
 
-    housing.append(pt(7.0, 1.8))
-    housing.append(pt(4.5, 4.4))
-    housing.append(pt(2.0, 4.9))
-    housing.append(pt(0.0, 5.0))
-    housing.append(pt(-2.0, 4.9))
-    housing.append(pt(-4.5, 4.4))
-    housing.append(pt(-7.0, 2.0))
+    # Sloping anterior face from nose up to septum crest and down to medial wing
+    housing.append(pt(u_nose * 0.6, v_top * 0.48))
+    housing.append(pt(r_sep * 1.05, v_top * 0.88))
+    housing.append(pt(0.0, v_top))
+    housing.append(pt(-r_sep * 1.05, v_top * 0.88))
+    housing.append(pt(u_base * 0.6, v_top * 0.38))
 
-    for i in range(7):
-        deg = 110.0 + (140.0 * i) / 6.0
+    # Rounded medial wing tip (-u)
+    for deg in np.linspace(120.0, 240.0, 7):
         rad = math.radians(deg)
-        u = -8.5 + 1.6 * math.cos(rad)
-        v = -2.2 + 1.6 * math.sin(rad)
+        u = (u_base + 1.8) + 2.2 * math.cos(rad)
+        v = (v_base + 1.6) + 2.2 * math.sin(rad)
         housing.append(pt(u, v))
 
     # 2. Outflow Cannula Stem (exiting medially towards catheter/vein)
     cannula = [
-        pt(-5.6, -1.5),
-        pt(-12.5, -1.5),
-        pt(-12.5, 0.5),
-        pt(-5.6, 0.5),
+        pt(-r_ch, v_base * 0.35),
+        pt(u_base - 8.5, v_base * 0.35),
+        pt(u_base - 8.5, v_base * 0.35 + 2.2),
+        pt(-r_ch, v_base * 0.35 + 2.2),
     ]
 
-    # 3. Titanium Chamber Cup
+    # 3. Titanium Chamber Cup (matching All-HU titanium reservoir, Ø 14.8 mm)
     chamber = []
     for deg in np.linspace(0, 360, 36, endpoint=False):
         rad = math.radians(deg)
-        chamber.append(pt(5.7 * math.cos(rad), 3.6 * math.sin(rad)))
+        chamber.append(pt(r_ch * math.cos(rad), (r_ch * 0.65) * math.sin(rad)))
 
-    # 4. Silicone Septum Puncture Dome (FACING SKIN)
+    # 4. Silicone Septum Puncture Dome (FACING SKIN FOR NEEDLE PUNCTURE, Ø 12.2 mm)
     septum = []
     for deg in np.linspace(0, 180, 17):
         rad = math.radians(deg)
-        u = 4.2 * math.cos(rad)
-        v = 2.4 + 2.4 * math.sin(rad)
+        u = r_sep * math.cos(rad)
+        v = (v_top * 0.5) + (v_top * 0.5) * math.sin(rad)
         septum.append(pt(u, v))
-    septum.append(pt(-4.2, 1.2))
-    septum.append(pt(4.2, 1.2))
+    septum.append(pt(-r_sep, v_top * 0.25))
+    septum.append(pt(r_sep, v_top * 0.25))
 
     composite = [housing, cannula, chamber, septum] if include_details else [housing]
     return {

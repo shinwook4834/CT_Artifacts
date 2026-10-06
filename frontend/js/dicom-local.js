@@ -463,7 +463,7 @@ export class LocalDicomLoader {
    * - Outflow cannula exiting medially towards the subclavian vein catheter.
    * - Low-profile nose tapering laterally into subcutaneous fat tissue.
    */
-  static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true) {
+  static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true, size = 'standard') {
     const pxScale = 1.0 / (pixelSpacing || 1.0);
     const theta = (21.0 * Math.PI) / 180.0;
 
@@ -494,66 +494,78 @@ export class LocalDicomLoader {
       ];
     };
 
-    // 1. Outer Housing Profile (Smooth teardrop/wedge axial contour)
+    // Official B. Braun Celsite® Engineering Specifications
+    const isSmall = size === 'small';
+    const lengthMm = isSmall ? 26.0 : 32.0;
+    const rCh = isSmall ? 6.0 : 7.4;    // Chamber radius (Ø 12.0mm vs Ø 14.8mm)
+    const rSep = isSmall ? 4.85 : 6.1;  // Septum radius (Ø 9.7mm vs Ø 12.2mm)
+    const heightMm = isSmall ? 9.5 : 12.5;
+
+    const uNose = lengthMm * 0.48;
+    const uBase = -lengthMm * 0.42;
+    const vBase = -heightMm * 0.35;
+    const vTop = heightMm * 0.65;
+
+    // 1. Outer Housing Profile (Standard 32 mm teardrop/wedge profile)
     const housingPoly = [];
-    // Base line along muscle fascia (-v)
+    // Base line seated along deep pectoral muscle fascia (-v)
+    const uStart = uBase + 2.0;
+    const uEnd = uNose - 3.0;
     for (let i = 0; i <= 8; i++) {
-      const u = -8.5 + (18.0 * i) / 8.0;
-      const v = -3.8 + 0.15 * (1.0 - Math.pow(u / 9.0, 2));
+      const u = uStart + (uEnd - uStart) * (i / 8.0);
+      const v = vBase + 0.25 * (1.0 - Math.pow(u / (lengthMm * 0.45), 2));
       housingPoly.push(transformPt(u, v));
     }
-    // Rounded lateral nose tip (+u)
+    // Rounded lateral nose tip in subcutaneous fat (+u)
     for (let i = 0; i <= 6; i++) {
-      const deg = -70.0 + (140.0 * i) / 6.0;
+      const deg = -60.0 + (120.0 * i) / 6.0;
       const rad = (deg * Math.PI) / 180.0;
-      const u = 9.5 + 1.8 * Math.cos(rad);
-      const v = -2.0 + 1.8 * Math.sin(rad);
+      const u = (uNose - 2.0) + 2.5 * Math.cos(rad);
+      const v = (vBase + 2.0) + 2.5 * Math.sin(rad);
       housingPoly.push(transformPt(u, v));
     }
-    // Sloping anterior face from nose to septum crest
-    housingPoly.push(transformPt(7.0, 1.8));
-    housingPoly.push(transformPt(4.5, 4.4));
-    housingPoly.push(transformPt(2.0, 4.9));
-    housingPoly.push(transformPt(0.0, 5.0));
-    housingPoly.push(transformPt(-2.0, 4.9));
-    housingPoly.push(transformPt(-4.5, 4.4));
-    housingPoly.push(transformPt(-7.0, 2.0));
+    // Sloping anterior face from nose up to septum crest and down to medial wing
+    housingPoly.push(transformPt(uNose * 0.6, vTop * 0.48));
+    housingPoly.push(transformPt(rSep * 1.05, vTop * 0.88));
+    housingPoly.push(transformPt(0.0, vTop));
+    housingPoly.push(transformPt(-rSep * 1.05, vTop * 0.88));
+    housingPoly.push(transformPt(uBase * 0.6, vTop * 0.38));
     // Rounded medial wing tip (-u)
     for (let i = 0; i <= 6; i++) {
-      const deg = 110.0 + (140.0 * i) / 6.0;
+      const deg = 120.0 + (120.0 * i) / 6.0;
       const rad = (deg * Math.PI) / 180.0;
-      const u = -8.5 + 1.6 * Math.cos(rad);
-      const v = -2.2 + 1.6 * Math.sin(rad);
+      const u = (uBase + 1.8) + 2.2 * Math.cos(rad);
+      const v = (vBase + 1.6) + 2.2 * Math.sin(rad);
       housingPoly.push(transformPt(u, v));
     }
 
     // 2. Outflow Cannula Stem (exiting medially towards catheter/vein)
     const cannulaPoly = [
-      transformPt(-5.6, -1.5),
-      transformPt(-12.5, -1.5),
-      transformPt(-12.5, 0.5),
-      transformPt(-5.6, 0.5),
+      transformPt(-rCh, vBase * 0.35),
+      transformPt(uBase - 8.5, vBase * 0.35),
+      transformPt(uBase - 8.5, vBase * 0.35 + 2.2),
+      transformPt(-rCh, vBase * 0.35 + 2.2),
     ];
 
-    // 3. Titanium Chamber Cup (matching the visible All-HU titanium reservoir boundary)
+    // 3. Titanium Chamber Cup (matching the visible All-HU titanium reservoir boundary, Ø 14.8 mm)
     const chamberPoly = [];
     const nChamber = 36;
     for (let i = 0; i < nChamber; i++) {
       const rad = (2.0 * Math.PI * i) / nChamber;
-      chamberPoly.push(transformPt(5.7 * Math.cos(rad), 3.6 * Math.sin(rad)));
+      chamberPoly.push(transformPt(rCh * Math.cos(rad), (rCh * 0.65) * Math.sin(rad)));
     }
 
-    // 4. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN FOR NEEDLE PUNCTURE)
+    // 4. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN FOR NEEDLE PUNCTURE, Ø 12.2 mm)
     const septumPoly = [];
     const nSeptum = 16;
     for (let i = 0; i <= nSeptum; i++) {
       const rad = (Math.PI * i) / nSeptum;
-      const u = 4.2 * Math.cos(rad);
-      const v = 2.4 + 2.4 * Math.sin(rad);
+      const u = rSep * Math.cos(rad);
+      const v = (vTop * 0.5) + (vTop * 0.5) * Math.sin(rad);
       septumPoly.push(transformPt(u, v));
     }
-    septumPoly.push(transformPt(-4.2, 1.2));
-    septumPoly.push(transformPt(4.2, 1.2));
+    septumPoly.push(transformPt(-rSep, vTop * 0.25));
+    septumPoly.push(transformPt(rSep, vTop * 0.25));
 
     return {
       housingPoly,
