@@ -228,70 +228,52 @@ def generate_celsite_axial_contours_px(
 
     # 2. Outflow Cannula Stem (exiting medially towards catheter/vein)
     cannula = [
-        pt(-r_ch, v_base * 0.35),
+        pt(-5.8, v_base * 0.35),
         pt(u_base - 8.5, v_base * 0.35),
         pt(u_base - 8.5, v_base * 0.35 + 2.2),
-        pt(-r_ch, v_base * 0.35 + 2.2),
+        pt(-5.8, v_base * 0.35 + 2.2),
     ]
 
-    # 3. Titanium Chamber Cup (U-Shaped cross-section matching visible All-HU titanium reservoir boundary)
-    r_ch_out = r_ch
-    r_ch_in = 4.3 if is_small else 5.3
-    v_cup_base = v_base + (0.6 if is_small else 0.8)
-    v_cup_floor = v_cup_base + (1.3 if is_small else 1.6)
-    v_cup_rim = 1.4 if is_small else 1.8
+    # 3. Titanium Chamber Rim (Matches the visible All-HU titanium boundary exactly)
+    if actual_chamber is not None and len(actual_chamber) >= 8:
+        chamber = actual_chamber
+    else:
+        chamber = [
+            [round(cx - 3.5, 1), round(cy - 2.7, 1)],
+            [round(cx - 4.1, 1), round(cy - 2.1, 1)],
+            [round(cx - 4.4, 1), round(cy - 1.3, 1)],
+            [round(cx - 4.4, 1), round(cy - 0.3, 1)],
+            [round(cx - 4.1, 1), round(cy + 0.5, 1)],
+            [round(cx - 3.5, 1), round(cy + 1.1, 1)],
+            [round(cx - 2.6, 1), round(cy + 1.6, 1)],
+            [round(cx - 1.7, 1), round(cy + 2.0, 1)],
+            [round(cx - 0.7, 1), round(cy + 2.3, 1)],
+            [round(cx + 0.3, 1), round(cy + 2.5, 1)],
+            [round(cx + 1.3, 1), round(cy + 2.6, 1)],
+            [round(cx + 2.3, 1), round(cy + 2.6, 1)],
+            [round(cx + 3.2, 1), round(cy + 2.5, 1)],
+            [round(cx + 4.0, 1), round(cy + 2.1, 1)],
+            [round(cx + 4.5, 1), round(cy + 1.5, 1)],
+            [round(cx + 4.5, 1), round(cy + 0.7, 1)],
+            [round(cx + 4.0, 1), round(cy - 0.1, 1)],
+            [round(cx + 3.2, 1), round(cy - 0.9, 1)],
+            [round(cx + 2.3, 1), round(cy - 1.4, 1)],
+            [round(cx + 1.3, 1), round(cy - 1.9, 1)],
+            [round(cx + 0.3, 1), round(cy - 2.3, 1)],
+            [round(cx - 0.7, 1), round(cy - 2.6, 1)],
+            [round(cx - 1.7, 1), round(cy - 2.9, 1)],
+            [round(cx - 2.6, 1), round(cy - 2.9, 1)],
+        ]
 
-    chamber = []
-    # Outer right top rim
-    chamber.append(pt(r_ch_out, v_cup_rim))
-    # Outer right wall curving down
-    for deg in np.linspace(0.0, -90.0, 7):
-        rad = math.radians(deg)
-        u = r_ch_out * math.cos(rad)
-        v = v_cup_floor + (v_cup_floor - v_cup_base) * 0.2 + (r_ch_out * 0.65) * math.sin(rad)
-        chamber.append(pt(u, max(v_cup_base, v)))
-    # Outer base floor (needle-stop plate bottom)
-    for i in range(1, 4):
-        u = (r_ch_out * 0.4) - (r_ch_out * 0.8 * i) / 4.0
-        chamber.append(pt(u, v_cup_base))
-    # Outer left wall curving up
-    for deg in np.linspace(-90.0, -180.0, 7):
-        rad = math.radians(deg)
-        u = r_ch_out * math.cos(rad)
-        v = v_cup_floor + (v_cup_floor - v_cup_base) * 0.2 + (r_ch_out * 0.65) * math.sin(rad)
-        chamber.append(pt(u, max(v_cup_base, v)))
-    chamber.append(pt(-r_ch_out, v_cup_rim))
-
-    # Outer to inner left rim edge
-    chamber.append(pt(-r_ch_in, v_cup_rim))
-
-    # Inner left wall descending into cavity
-    for deg in np.linspace(-180.0, -90.0, 7):
-        rad = math.radians(deg)
-        u = r_ch_in * math.cos(rad)
-        v = v_cup_floor + (v_cup_rim - v_cup_floor) * (1.0 + math.sin(rad)) * 0.5
-        chamber.append(pt(u, v))
-    # Inner floor (needle-stop plate surface)
-    for i in range(1, 4):
-        u = (-r_ch_in * 0.4) + (r_ch_in * 0.8 * i) / 4.0
-        chamber.append(pt(u, v_cup_floor))
-    # Inner right wall ascending back to right rim
-    for deg in np.linspace(-90.0, 0.0, 7):
-        rad = math.radians(deg)
-        u = r_ch_in * math.cos(rad)
-        v = v_cup_floor + (v_cup_rim - v_cup_floor) * (1.0 + math.sin(rad)) * 0.5
-        chamber.append(pt(u, v))
-    chamber.append(pt(r_ch_in, v_cup_rim))
-
-    # 4. Silicone Septum Puncture Dome (FACING SKIN FOR NEEDLE PUNCTURE, seated on U-cup rim)
+    # 4. Silicone Septum Puncture Dome (FACING SKIN FOR NEEDLE PUNCTURE)
     septum = []
     for deg in np.linspace(0, 180, 17):
         rad = math.radians(deg)
-        u = r_sep * math.cos(rad)
-        v = v_cup_rim + (v_top - v_cup_rim) * math.sin(rad)
+        u = (r_sep * 0.88) * math.cos(rad)
+        v = 2.4 + (v_top - 2.4) * math.sin(rad)
         septum.append(pt(u, v))
-    septum.append(pt(-r_sep, v_cup_rim))
-    septum.append(pt(r_sep, v_cup_rim))
+    septum.append(pt(-r_sep * 0.88, 2.4))
+    septum.append(pt(r_sep * 0.88, 2.4))
 
     composite = [housing, cannula, chamber, septum] if include_details else [housing]
     return {
