@@ -547,25 +547,76 @@ export class LocalDicomLoader {
       transformPt(-rCh, vBase * 0.35 + 2.2),
     ];
 
-    // 3. Titanium Chamber Cup (matching the visible All-HU titanium reservoir boundary, Ø 14.8 mm)
-    const chamberPoly = [];
-    const nChamber = 36;
-    for (let i = 0; i < nChamber; i++) {
-      const rad = (2.0 * Math.PI * i) / nChamber;
-      chamberPoly.push(transformPt(rCh * Math.cos(rad), (rCh * 0.65) * Math.sin(rad)));
-    }
+    // 3. Titanium Chamber Cup (U-Shaped cross-section matching visible All-HU titanium reservoir boundary)
+    const rChOut = rCh;
+    const rChIn = isSmall ? 4.3 : 5.3;
+    const vCupBase = vBase + (isSmall ? 0.6 : 0.8);
+    const vCupFloor = vCupBase + (isSmall ? 1.3 : 1.6);
+    const vCupRim = isSmall ? 1.4 : 1.8;
 
-    // 4. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN FOR NEEDLE PUNCTURE, Ø 12.2 mm)
+    const chamberPoly = [];
+    // Outer right top rim
+    chamberPoly.push(transformPt(rChOut, vCupRim));
+    // Outer right wall curving down
+    for (let i = 0; i <= 6; i++) {
+      const deg = 0.0 - (90.0 * i) / 6.0;
+      const rad = (deg * Math.PI) / 180.0;
+      const u = rChOut * Math.cos(rad);
+      const v = vCupFloor + (vCupFloor - vCupBase) * 0.2 + (rChOut * 0.65) * Math.sin(rad);
+      chamberPoly.push(transformPt(u, Math.max(vCupBase, v)));
+    }
+    // Outer base floor (needle-stop plate bottom)
+    for (let i = 1; i <= 3; i++) {
+      const u = (rChOut * 0.4) - (rChOut * 0.8 * i) / 4.0;
+      chamberPoly.push(transformPt(u, vCupBase));
+    }
+    // Outer left wall curving up
+    for (let i = 0; i <= 6; i++) {
+      const deg = -90.0 - (90.0 * i) / 6.0;
+      const rad = (deg * Math.PI) / 180.0;
+      const u = rChOut * Math.cos(rad);
+      const v = vCupFloor + (vCupFloor - vCupBase) * 0.2 + (rChOut * 0.65) * Math.sin(rad);
+      chamberPoly.push(transformPt(u, Math.max(vCupBase, v)));
+    }
+    chamberPoly.push(transformPt(-rChOut, vCupRim));
+
+    // Outer to inner left rim edge
+    chamberPoly.push(transformPt(-rChIn, vCupRim));
+
+    // Inner left wall descending into cavity
+    for (let i = 0; i <= 6; i++) {
+      const deg = -180.0 + (90.0 * i) / 6.0;
+      const rad = (deg * Math.PI) / 180.0;
+      const u = rChIn * Math.cos(rad);
+      const v = vCupFloor + (vCupRim - vCupFloor) * (1.0 + Math.sin(rad)) * 0.5;
+      chamberPoly.push(transformPt(u, v));
+    }
+    // Inner floor (needle-stop plate surface)
+    for (let i = 1; i <= 3; i++) {
+      const u = (-rChIn * 0.4) + (rChIn * 0.8 * i) / 4.0;
+      chamberPoly.push(transformPt(u, vCupFloor));
+    }
+    // Inner right wall ascending back to right rim
+    for (let i = 0; i <= 6; i++) {
+      const deg = -90.0 + (90.0 * i) / 6.0;
+      const rad = (deg * Math.PI) / 180.0;
+      const u = rChIn * Math.cos(rad);
+      const v = vCupFloor + (vCupRim - vCupFloor) * (1.0 + Math.sin(rad)) * 0.5;
+      chamberPoly.push(transformPt(u, v));
+    }
+    chamberPoly.push(transformPt(rChIn, vCupRim));
+
+    // 4. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN FOR NEEDLE PUNCTURE, seated on U-cup rim)
     const septumPoly = [];
     const nSeptum = 16;
     for (let i = 0; i <= nSeptum; i++) {
       const rad = (Math.PI * i) / nSeptum;
       const u = rSep * Math.cos(rad);
-      const v = (vTop * 0.5) + (vTop * 0.5) * Math.sin(rad);
+      const v = vCupRim + (vTop - vCupRim) * Math.sin(rad);
       septumPoly.push(transformPt(u, v));
     }
-    septumPoly.push(transformPt(-rSep, vTop * 0.25));
-    septumPoly.push(transformPt(rSep, vTop * 0.25));
+    septumPoly.push(transformPt(-rSep, vCupRim));
+    septumPoly.push(transformPt(rSep, vCupRim));
 
     return {
       housingPoly,
