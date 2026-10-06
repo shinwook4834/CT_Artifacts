@@ -79,54 +79,45 @@ export class ContourOverlay {
       ctx.restore();
     }
 
-    // 2. Draw ChemoPort Implant Contour (B. Braun Celsite® CAD Model: Housing Delta + Titanium Core + Cannula)
+    // 2. Draw ChemoPort Implant Contour (Physical Titanium Reservoir + Anterior Septum Puncture Crest)
     if (this.showPort && this.contours.port && this.contours.port.length > 0) {
-      ctx.save();
       for (let pIdx = 0; pIdx < this.contours.port.length; pIdx++) {
         const poly = this.contours.port[pIdx];
-        if (!poly || poly.length < 3) continue;
+        if (!poly || poly.length < 2) continue;
 
-        if (pIdx === 2 && this.contours.port.length >= 3) {
-          // 3. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN - Needle Target)
+        ctx.save();
+        if (pIdx === 1) {
+          // Septum Crest (Anterior skin-facing Huber needle puncture target)
           ctx.strokeStyle = "#38bdf8";
-          ctx.fillStyle = "rgba(56, 189, 248, 0.45)";
-          ctx.lineWidth = 2.4 / this.zoom;
+          ctx.lineWidth = 2.8 / this.zoom;
           ctx.shadowColor = "#38bdf8";
-          ctx.shadowBlur = 10 / this.zoom;
-        } else if (pIdx === 1 && this.contours.port.length >= 2) {
-          // 2. Titanium Chamber Cup (All-HU Titanium Boundary Fit)
-          ctx.strokeStyle = "#e2e8f0";
-          ctx.fillStyle = "rgba(226, 232, 240, 0.35)";
-          ctx.lineWidth = 2.2 / this.zoom;
-          ctx.shadowColor = "#94a3b8";
           ctx.shadowBlur = 8 / this.zoom;
-        } else if (pIdx === 3) {
-          // 4. Outflow Cannula / Stem towards catheter
+
+          ctx.beginPath();
+          ctx.moveTo(poly[0][0], poly[0][1]);
+          for (let i = 1; i < poly.length; i++) {
+            ctx.lineTo(poly[i][0], poly[i][1]);
+          }
+          ctx.stroke();
+        } else {
+          // Port Body (Physical titanium reservoir contour matching All-HU outline)
           ctx.strokeStyle = "#0d9488";
-          ctx.fillStyle = "rgba(13, 148, 136, 0.40)";
-          ctx.lineWidth = 1.8 / this.zoom;
+          ctx.fillStyle = "rgba(13, 148, 136, 0.20)";
+          ctx.lineWidth = 2.0 / this.zoom;
           ctx.shadowColor = "#2dd4bf";
           ctx.shadowBlur = 6 / this.zoom;
-        } else {
-          // 1. Outer Epoxy Housing Profile (Base resting on chest wall)
-          ctx.strokeStyle = "#0d9488";
-          ctx.fillStyle = "rgba(13, 148, 136, 0.16)";
-          ctx.lineWidth = 2.2 / this.zoom;
-          ctx.shadowColor = "#2dd4bf";
-          ctx.shadowBlur = 8 / this.zoom;
-        }
 
-        ctx.beginPath();
-        ctx.moveTo(poly[0][0], poly[0][1]);
-        for (let i = 1; i < poly.length; i++) {
-          ctx.lineTo(poly[i][0], poly[i][1]);
+          ctx.beginPath();
+          ctx.moveTo(poly[0][0], poly[0][1]);
+          for (let i = 1; i < poly.length; i++) {
+            ctx.lineTo(poly[i][0], poly[i][1]);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
         }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
         ctx.restore();
       }
-      ctx.restore();
     }
 
     ctx.restore();

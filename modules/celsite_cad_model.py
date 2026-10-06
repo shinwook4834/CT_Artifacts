@@ -27,7 +27,7 @@ Engineering Dimensions:
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, List, Tuple, Optional, Union, Any
 import math
 import numpy as np
 
@@ -153,17 +153,24 @@ def generate_celsite_axial_contours_px(
     pixel_spacing: Union[float, Tuple[float, float]] = 1.0,
     is_left_hemi: bool = True,
     size: str = "standard",
-    include_details: bool = True
-) -> Dict[str, List[List[int]]]:
+    include_details: bool = True,
+    actual_chamber: Optional[List[List[int]]] = None,
+    septum_arc: Optional[List[List[int]]] = None,
+) -> Dict[str, Any]:
     """Generates exact anatomical cross-section contours of the B. Braun Celsite port
     for an Axial CT slice, oriented so the silicone septum faces the skin for needle puncture.
-    
-    Orientation:
-    - Base plate rests on the pectoral muscle wall (chest inclination ~ 26.5°).
-    - Silicone septum dome faces anteriorly towards the skin (direct needle puncture trajectory).
-    - Low-profile sloping nose tapers into the lateral subcutaneous fat pocket.
-    - Outflow cannula exits medially towards the subclavian vein catheter.
     """
+    if actual_chamber is not None and len(actual_chamber) >= 4:
+        port_body = actual_chamber
+        if septum_arc is None or len(septum_arc) < 2:
+            septum_arc = [p for p in port_body if p[1] <= cy]
+        composite = [port_body, septum_arc] if len(septum_arc) >= 2 else [port_body]
+        return {
+            "port_body": port_body,
+            "septum_arc": septum_arc,
+            "composite": composite,
+        }
+
     specs = CELSITE_PRESETS.get(size, CELSITE_PRESETS["standard"])
     if isinstance(pixel_spacing, (tuple, list)):
         dy_mm, dx_mm = float(pixel_spacing[0]), float(pixel_spacing[1])
@@ -267,15 +274,16 @@ def generate_celsite_contours_px(
     size: str = "standard",
     include_details: bool = True,
     view: str = "axial",
-    actual_chamber: Optional[List[List[int]]] = None
-) -> Dict[str, List[List[int]]]:
+    actual_chamber: Optional[List[List[int]]] = None,
+    septum_arc: Optional[List[List[int]]] = None,
+) -> Dict[str, Any]:
     """Transforms the B. Braun Celsite CAD model into exact 2D pixel coordinates for CT viewer overlay.
     Defaults to the anatomical Axial cross-section where the silicone septum faces the skin for needle puncture.
     """
     if view == "axial" or angle_deg is None or abs(angle_deg - 198.5) < 2.0 or abs(angle_deg - 341.5) < 2.0:
         is_left = cx > 256.0
         return generate_celsite_axial_contours_px(
-            cx, cy, pixel_spacing, is_left_hemi=is_left, size=size, include_details=include_details, actual_chamber=actual_chamber
+            cx, cy, pixel_spacing, is_left_hemi=is_left, size=size, include_details=include_details, actual_chamber=actual_chamber, septum_arc=septum_arc
         )
 
     specs = CELSITE_PRESETS.get(size, CELSITE_PRESETS["standard"])

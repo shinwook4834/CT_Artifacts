@@ -302,9 +302,8 @@ export class LocalDicomLoader {
     }
 
     if (bestCluster && bestCluster.cluster) {
-      // 1. All-HU Adaptive Titanium Core Isolation
-      // Pure titanium HU reaches 15,000 ~ 28,000 HU. Beam hardening streak blooming is <= 2500 HU.
-      const tiThresh = Math.max(3500, bestCluster.maxHu * 0.30);
+      // 1. All-HU Adaptive Titanium Core Peak
+      const tiThresh = bestCluster.maxHu >= 6000 ? Math.max(3200, bestCluster.maxHu * 0.28) : Math.max(1600, bestCluster.maxHu * 0.60);
       let sumWeightedX = 0, sumWeightedY = 0, sumWeights = 0;
       let tiCount = 0;
 
@@ -336,35 +335,115 @@ export class LocalDicomLoader {
         }
       }
 
-      // 2. Extract Exact Titanium Chamber Contour directly from All-HU data (Radial boundary sweep)
-      const tiContour = [];
-      const numRays = 28;
-      const tcx = bestCluster.cx;
-      const tcy = bestCluster.cy;
-      for (let i = 0; i < numRays; i++) {
-        const deg = (360.0 * i) / numRays;
-        const rad = (deg * Math.PI) / 180.0;
-        const cosA = Math.cos(rad);
-        const sinA = Math.sin(rad);
-        let maxR = 0;
-        for (let r = 1.0; r <= 16.0; r += 0.25) {
-          const px = Math.round(tcx + r * cosA);
-          const py = Math.round(tcy + r * sinA);
-          if (px >= 0 && px < w && py >= 0 && py < w) {
-            if (huArray[py * w + px] >= tiThresh) {
-              maxR = r;
+      // 2. Exact Boundary Tracing on All-HU Titanium Core (Moore-Neighbor Tracer)
+      const mask = new Uint8Array(w * w);
+      let startX = -1, startY = -1;
+      const minX = Math.max(0, Math.floor(bestCluster.cx - 20));
+      const maxX = Math.min(w - 1, Math.ceil(bestCluster.cx + 20));
+      const minY = Math.max(0, Math.floor(bestCluster.cy - 20));
+      const maxY = Math.min(w - 1, Math.ceil(bestCluster.cy + 20));
+
+      for (let y = minY; y <= maxY; y++) {
+        const rowOff = y * w;
+        for (let x = minX; x <= maxX; x++) {
+          if (huArray[rowOff + x] >= tiThresh) {
+            mask[rowOff + x] = 1;
+            if (startY === -1) {
+              startX = x;
+              startY = y;
             }
           }
         }
-        if (maxR > 0) {
-          tiContour.push([
-            Math.round(tcx + maxR * cosA),
-            Math.round(tcy + maxR * sinA),
-          ]);
-        }
       }
-      if (tiContour.length >= 8) {
-        bestCluster.titaniumContour = tiContour;
+
+      if (startY !== -1) {
+        // 8-direction Moore-Neighbor boundary tracing
+        const dirs = [
+          [1, 0], [1, 1], [0, 1], [-1, 1],
+          [-1, 0], [-1, -1], [0, -1], [1, -1]
+        ];
+        const rawContour = [];
+        let currX = startX, currY = startY;
+        let backtrack = 6;
+
+        for (let step = 0; step < 600; step++) {
+          rawContour.push([currX, currY]);
+          let found = false;
+          for (let d = 0; d < 8; d++) {
+            const dIdx = (backtrack + d) % 8;
+            const nx = currX + dirs[dIdx][0];
+            const ny = currY + dirs[dIdx][1];
+            if (nx >= 0 && nx < w && ny >= 0 && ny < w && mask[ny * w + nx] === 1) {
+              currX = nx;
+              currY = ny;
+              backtrack = (dIdx + 5) % 8;
+              found = true;
+              break;
+            }
+          }
+          if (!found || (currX === startX && currY === startY && rawContour.length > 2)) {
+            break;
+          }
+        }
+
+        // Cyclic moving-average smoothing (2-pass filter)
+        if (rawContour.length >= 8) {
+          const N = rawContour.length;
+          let smooth = rawContour;
+          for (let pass = 0; pass < 2; pass++) {
+            const nextSmooth = [];
+            for (let i = 0; i < N; i++) {
+              const pPrev2 = smooth[(i - 2 + N) % N];
+              const pPrev1 = smooth[(i - 1 + N) % N];
+              const pCurr  = smooth[i];
+              const pNext1 = smooth[(i + 1) % N];
+              const pNext2 = smooth[(i + 2) % N];
+              const sx = 0.1 * pPrev2[0] + 0.2 * pPrev1[0] + 0.4 * pCurr[0] + 0.2 * pNext1[0] + 0.1 * pNext2[0];
+              const sy = 0.1 * pPrev2[1] + 0.2 * pPrev1[1] + 0.4 * pCurr[1] + 0.2 * pNext1[1] + 0.1 * pNext2[1];
+              nextSmooth.push([Math.round(sx * 10) / 10, Math.round(sy * 10) / 10]);
+            }
+            smooth = nextSmooth;
+          }
+
+          bestCluster.portContour = smooth;
+
+          // Upper crest facing skin: Contiguous run around apex (min y) where y <= cy
+          let minYVal = Infinity;
+          let topIdx = 0;
+          for (let i = 0; i < N; i++) {
+            if (smooth[i][1] < minYVal) {
+              minYVal = smooth[i][1];
+              topIdx = i;
+            }
+          }
+
+          const cy = bestCluster.cy;
+          const backPts = [];
+          for (let step = 1; step < N; step++) {
+            const idx = (topIdx - step + N) % N;
+            if (smooth[idx][1] <= cy) {
+              backPts.push(smooth[idx]);
+            } else {
+              break;
+            }
+          }
+
+          const fwdPts = [];
+          for (let step = 1; step < N; step++) {
+            const idx = (topIdx + step) % N;
+            if (smooth[idx][1] <= cy) {
+              fwdPts.push(smooth[idx]);
+            } else {
+              break;
+            }
+          }
+
+          backPts.reverse();
+          const septumArc = [...backPts, smooth[topIdx], ...fwdPts];
+          if (septumArc.length >= 2) {
+            bestCluster.septumArc = septumArc;
+          }
+        }
       }
     }
 
@@ -373,111 +452,57 @@ export class LocalDicomLoader {
 
   /**
    * Generates exact anatomical cross-section contours of the B. Braun Celsite® port
-   * on the Axial CT plane (matching user specification and clinical implantation anatomy).
-   * 
-   * Anatomical orientation:
-   * - Flat base plate seated flush against deep pectoral muscle wall.
-   * - Silicone septum dome elevated on anterior superficial face, DIRECTLY FACING SKIN
-   *   to accept Huber needle puncture from the anterior skin surface.
-   * - Outflow cannula exiting medially towards the subclavian vein catheter.
-   * - Low-profile nose tapering laterally into subcutaneous fat tissue.
+   * on the Axial CT plane, matching the visible All-HU titanium boundary.
    */
-  static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true, actualChamber = null) {
+  static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true, actualPortContour = null, septumArc = null) {
+    if (actualPortContour && actualPortContour.length >= 6) {
+      const composite = [actualPortContour];
+      if (septumArc && septumArc.length >= 2) {
+        composite.push(septumArc);
+      }
+      return {
+        portBody: actualPortContour,
+        septumArc: septumArc || [],
+        composite,
+      };
+    }
+
+    // Fallback parametric port capsule if no CT metal cluster is available
     const pxScale = 1.0 / (pixelSpacing || 1.0);
     const theta = (26.5 * Math.PI) / 180.0;
-
-    // Basis vectors for axial cross-section:
-    // Tangent (tx, ty): along chest wall towards medial (subclavian vein entry)
-    // Normal (nx, ny): perpendicular towards anterior chest skin (ny < 0, superficial needle entry)
-    let tx, ty, nx, ny;
-    if (isLeftHemisphere) {
-      tx = -Math.cos(theta);
-      ty = -Math.sin(theta);
-      nx = Math.sin(theta);
-      ny = -Math.cos(theta);
-    } else {
-      tx = Math.cos(theta);
-      ty = -Math.sin(theta);
-      nx = -Math.sin(theta);
-      ny = -Math.cos(theta);
+    const cosA = Math.cos(theta);
+    const sinA = Math.sin(theta);
+    const semiMajPx = 6.0 * pxScale;
+    const semiMinPx = 3.2 * pxScale;
+    const nPts = 32;
+    const portBody = [];
+    for (let i = 0; i < nPts; i++) {
+      const t = (2.0 * Math.PI * i) / nPts;
+      const lx = semiMajPx * Math.cos(t);
+      const ly = semiMinPx * Math.sin(t);
+      portBody.push([
+        Math.round((cx + lx * cosA - ly * sinA) * 10) / 10,
+        Math.round((cy + lx * sinA + ly * cosA) * 10) / 10,
+      ]);
     }
-
-    const transformPt = (uMm, vMm) => {
-      const uPx = uMm * pxScale;
-      const vPx = vMm * pxScale;
-      return [
-        Math.round(cx + uPx * tx + vPx * nx),
-        Math.round(cy + uPx * ty + vPx * ny),
-      ];
-    };
-
-    const uNose = -14.0;
-    const uBase = 10.0;
-    const rCh = 7.4;  // 14.8mm outer dia
-    const rSep = 6.1; // 12.2mm septum dia
-    const vBase = -5.0;
-    const vTop = 6.0;
-
-    // 1. Outer Epoxy Housing (Low-Profile Cross Section: sloping nose, flat base, septum crest)
-    const housingPoly = [
-      transformPt(uNose, vBase),
-      transformPt(uNose, vBase + 2.0),
-      transformPt(uNose + 4.0, -0.5),
-      transformPt(-rCh, 3.2),
-      transformPt(-rSep, vTop - 0.4),
-      transformPt(0.0, vTop),
-      transformPt(rSep, vTop - 0.4),
-      transformPt(rCh + 1.1, 3.5),
-      transformPt(uBase, 0.5),
-      transformPt(uBase, vBase),
-      transformPt(0.0, vBase),
-    ];
-
-    // 2. Titanium Chamber Cup (fitted directly to All-HU titanium boundary when available)
-    let chamberPoly;
-    if (actualChamber && actualChamber.length >= 6) {
-      chamberPoly = actualChamber;
-    } else {
-      chamberPoly = [
-        transformPt(-rCh, vBase + 0.5),
-        transformPt(-rCh, vTop - 1.0),
-        transformPt(-rSep, vTop - 0.7),
-        transformPt(rSep, vTop - 0.7),
-        transformPt(rCh, vTop - 1.0),
-        transformPt(rCh, vBase + 0.5),
-        transformPt(0.0, vBase + 0.5),
-      ];
-    }
-
-    // 3. Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN FOR NEEDLE PUNCTURE!)
-    const septumPoly = [
-      transformPt(-rSep, 2.5),
-      transformPt(-rSep, vTop - 0.3),
-      transformPt(0.0, vTop),
-      transformPt(rSep, vTop - 0.3),
-      transformPt(rSep, 2.5),
-      transformPt(0.0, 2.5),
-    ];
-
-    // 4. Outflow Cannula / Stem towards catheter (pointing medially towards vein)
-    const cannulaPoly = [
-      transformPt(rCh, -2.0),
-      transformPt(rCh + 9.5, -2.0),
-      transformPt(rCh + 9.5, 0.2),
-      transformPt(rCh, 0.2),
-    ];
-
+    const arc = portBody.filter((p) => p[1] <= cy);
+    const composite = arc.length >= 2 ? [portBody, arc] : [portBody];
     return {
-      housingPoly,
-      chamberPoly,
-      septumPoly,
-      cannulaPoly,
-      composite: [housingPoly, chamberPoly, septumPoly, cannulaPoly],
+      portBody,
+      septumArc: arc,
+      composite,
     };
   }
 
   static tracePortContour(cluster, cx, cy, pixelSpacing = 1.0, isLeft = true) {
-    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, cluster ? cluster.titaniumContour : null);
+    const cad = LocalDicomLoader.generateCelsiteCADContours(
+      cx,
+      cy,
+      pixelSpacing,
+      isLeft,
+      cluster ? cluster.portContour : null,
+      cluster ? cluster.septumArc : null
+    );
     return cad.composite;
   }
 
@@ -547,9 +572,9 @@ export class LocalDicomLoader {
       return { port: [], art: [], port_px: 0, art_px: 0 };
     }
 
-    const { cx, cy, count, titaniumContour } = comp;
+    const { cx, cy, count, portContour, septumArc } = comp;
     const isLeft = cx > 256;
-    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, titaniumContour);
+    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, portContour, septumArc);
     const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy, 14);
 
     let artPx = 0;
