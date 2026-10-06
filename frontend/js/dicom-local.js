@@ -693,6 +693,8 @@ export class LocalDicomLoader {
       return { port: [], art: [], port_px: 0, art_px: 0 };
     }
 
+    const { x: cx, y: cy } = portCenter;
+    const isLeft = cx > 256;
     const actualTi = (comp && comp.portContour && comp.portContour.length >= 8) ? comp.portContour : null;
     const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, 'standard', actualTi);
     const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy, 14);
