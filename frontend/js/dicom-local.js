@@ -466,14 +466,17 @@ export class LocalDicomLoader {
    * - Low-profile nose tapering laterally into subcutaneous fat tissue.
    */
   /**
-   * Generates exact anatomical contours of the Breast Tissue Expander Injection Port Assembly
-   * on the Axial CT plane:
+   * Generates exact anatomical contours of the Round Breast Tissue Expander Injection Port Assembly
+   * across all slices on the Axial CT plane:
+   * - 3D Spherical/Round Expander Profile:
+   *   The U-bracket grows to its maximum height & width at the equator (dz = 0)
+   *   and smoothly shrinks towards superior and inferior margins.
    * 1. U-shaped Frame / Bracket (needle stop & suture tabs, tilted along chest wall)
    * 2. Central High-Density Magnetic/Metallic Core ("아래 밝은 물질")
    */
   static generateTissueExpanderContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true, dz = 0.0, actualCore = null) {
     const absDz = Math.abs(dz);
-    if (absDz > 16.0) {
+    if (absDz > 19.0) {
       return {
         uBracketPoly: [],
         corePoly: [],
@@ -499,12 +502,18 @@ export class LocalDicomLoader {
       ];
     };
 
-    // 1. U-shaped Frame / Bracket (Left arm, bottom shelf, right arm)
-    // Physical dimensions: width = 34.0 mm, arm height = 26.0 mm, arm thickness = 2.8 mm, base thickness = 3.8 mm
-    const wMm = 17.0;       // half-width
-    const hMm = 26.0;       // arm height
-    const twMm = 2.8;       // arm thickness
-    const tbMm = 3.8;       // base thickness
+    // 3D Spherical/Round dome scale factor:
+    // Equator at dz = 0 mm (maximum dimensions), tapering smoothly towards margins (|dz| -> 19 mm)
+    const Rz = 19.0;
+    const sRound = Math.sqrt(Math.max(0.0, 1.0 - Math.pow(absDz / Rz, 2)));
+
+    // 1. Dynamic U-shaped Frame / Bracket:
+    // Height: grows from 10.0 mm at edges to 30.0 mm at center
+    // Width: grows from 26.0 mm (half-width 13.0 mm) to 35.0 mm (half-width 17.5 mm)
+    const hMm = 10.0 + (30.0 - 10.0) * sRound;
+    const wMm = 13.0 + (17.5 - 13.0) * sRound;
+    const twMm = 2.4 + 0.4 * sRound;
+    const tbMm = 3.2 + 0.6 * sRound;
 
     const uBracketPoly = [
       transformPt(-wMm, hMm),
@@ -519,21 +528,19 @@ export class LocalDicomLoader {
 
     // 2. Central High-Density Magnetic/Metallic Core ("아래 밝은 물질")
     // Located at the bottom center of the U-channel.
-    // Cylinder diameter = 13.0 mm (radius = 6.5 mm), vertical height = 10.0 mm
+    // Core radius smoothly scales with sRound
     let corePoly = [];
-    if (absDz <= 13.0) {
-      if (actualCore && actualCore.length >= 8) {
-        corePoly = actualCore;
-      } else {
-        const rCoreU = 6.4;
-        const rCoreV = 5.2;
-        const nCore = 24;
-        for (let i = 0; i < nCore; i++) {
-          const rad = (2 * Math.PI * i) / nCore;
-          const u = rCoreU * Math.cos(rad);
-          const v = -1.5 + rCoreV * Math.sin(rad);
-          corePoly.push(transformPt(u, v));
-        }
+    if (actualCore && actualCore.length >= 8) {
+      corePoly = actualCore;
+    } else if (absDz <= 18.5) {
+      const rCoreU = 6.4 * (0.4 + 0.6 * sRound);
+      const rCoreV = 5.2 * (0.4 + 0.6 * sRound);
+      const nCore = 24;
+      for (let i = 0; i < nCore; i++) {
+        const rad = (2 * Math.PI * i) / nCore;
+        const u = rCoreU * Math.cos(rad);
+        const v = -1.5 + rCoreV * Math.sin(rad);
+        corePoly.push(transformPt(u, v));
       }
     }
 
@@ -622,7 +629,7 @@ export class LocalDicomLoader {
 
     // Physical Tissue Expander port total thickness along Z is ~30 mm (+/- 15 mm from center).
     // Beyond +/- 16.0 mm, no injection port cross-section exists on CT.
-    if (absDz > 16.0) {
+    if (absDz > 19.0) {
       return { port: [], art: [], port_px: 0, art_px: 0 };
     }
 
