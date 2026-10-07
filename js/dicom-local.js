@@ -484,9 +484,8 @@ export class LocalDicomLoader {
       };
     }
 
-    const pxScale = 1.0 / (pixelSpacing || 1.0);
-    // Chest wall inclination: +11 deg on left breast (cx > 256), -11 deg on right breast (cx <= 256)
-    const angleDeg = isLeftHemisphere ? 11.0 : -11.0;
+    // Chest wall inclination: +6.5 deg on left breast (cx > 256), -6.5 deg on right breast (cx <= 256)
+    const angleDeg = isLeftHemisphere ? 6.5 : -6.5;
     const theta = (angleDeg * Math.PI) / 180.0;
 
     const tx = Math.cos(theta);
@@ -495,10 +494,10 @@ export class LocalDicomLoader {
     const nx = isLeftHemisphere ? Math.sin(theta) : -Math.sin(theta);
     const ny = -Math.cos(theta);
 
-    const transformPt = (uMm, vMm) => {
+    const transformPt = (u, v) => {
       return [
-        Math.round((cx + uMm * pxScale * tx + vMm * pxScale * nx) * 10) / 10,
-        Math.round((cy + uMm * pxScale * ty + vMm * pxScale * ny) * 10) / 10,
+        Math.round((cx + u * tx + v * nx) * 10) / 10,
+        Math.round((cy + u * ty + v * ny) * 10) / 10,
       ];
     };
 
@@ -507,58 +506,63 @@ export class LocalDicomLoader {
     const Rz = 19.0;
     const sRound = Math.sqrt(Math.max(0.0, 1.0 - Math.pow(absDz / Rz, 2)));
 
-    // 1. Anatomical Curved U-shaped Frame / Bracket (Left arm, curved bottom cradle, right arm):
-    // Left arm reaches higher towards anterior skin, right arm follows chest wall slope
-    const hLeft = 6.0 + 16.0 * sRound;
-    const hRight = 3.0 + 10.0 * sRound;
-    const wSpan = 10.5 + 3.0 * sRound;
-    const tw = 2.6; // Wall thickness (mm)
+    // 1. Full-Scale All-HU Curved U-shaped Frame / Bracket:
+    // Follows the actual gray pillars and bottom shelf visible in All-HU window mode (width ~142 px)
+    const wSpan = 46.0 + 25.0 * sRound; // ~71 px half-width at equator (142 px total span)
+    const hLeft = 32.0 + 34.0 * sRound; // ~66 px left arm height
+    const hRight = 20.0 + 22.0 * sRound; // ~42 px right arm height
+    const tw = 6.0;                     // 6 px wall thickness
+    const vBase = -18.5;                // Base shelf depth below metal core center
 
     const outerPts = [];
     const innerPts = [];
 
     // Outer profile:
+    // Left tip
     outerPts.push(transformPt(-wSpan, hLeft));
-    for (let i = 0; i <= 5; i++) {
-      const t = 1.0 - (i / 5);
-      const u = -wSpan + Math.pow(1.0 - t, 2) * 1.5;
-      const v = hLeft * t - (1.0 - t) * 1.5;
+    // Descend along outer left wall
+    for (let i = 1; i <= 5; i++) {
+      const t = i / 5.0;
+      const u = -wSpan;
+      const v = hLeft * (1.0 - t) + (vBase + 6.0) * t;
       outerPts.push(transformPt(u, v));
     }
-    // Bottom curved cradle:
-    for (let i = 0; i <= 6; i++) {
-      const t = -0.6 + 1.2 * (i / 6);
-      const u = t * wSpan * 0.8;
-      const v = -2.0 * (1.0 - Math.pow(t / 0.6, 2));
+    // Outer bottom shelf curved cradle (left to right)
+    for (let i = 1; i <= 9; i++) {
+      const t = i / 10.0;
+      const u = -wSpan * (1.0 - t) + wSpan * t;
+      const arch = Math.sin(t * Math.PI) * 3.5;
+      const v = vBase - arch;
       outerPts.push(transformPt(u, v));
     }
-    // Right arm:
-    for (let i = 0; i <= 5; i++) {
-      const t = i / 5;
-      const u = wSpan * 0.8 + t * (wSpan * 0.2);
-      const v = -1.5 * (1.0 - t) + hRight * t;
+    // Ascend along outer right wall
+    for (let i = 1; i <= 5; i++) {
+      const t = i / 5.0;
+      const u = wSpan;
+      const v = (vBase + 6.0) * (1.0 - t) + hRight * t;
       outerPts.push(transformPt(u, v));
     }
     outerPts.push(transformPt(wSpan, hRight));
 
-    // Inner profile:
+    // Inner profile (right to left):
     innerPts.push(transformPt(wSpan - tw, hRight));
-    for (let i = 0; i <= 5; i++) {
-      const t = 1.0 - (i / 5);
-      const u = (wSpan - tw) * 0.8 + t * ((wSpan - tw) * 0.2);
-      const v = -1.5 * (1.0 - t) + (hRight - tw) * t + tw;
+    for (let i = 1; i <= 5; i++) {
+      const t = i / 5.0;
+      const u = wSpan - tw;
+      const v = hRight * (1.0 - t) + (vBase + tw + 6.0) * t;
       innerPts.push(transformPt(u, v));
     }
-    for (let i = 0; i <= 6; i++) {
-      const t = 0.6 - 1.2 * (i / 6);
-      const u = t * (wSpan - tw) * 0.8;
-      const v = -2.0 * (1.0 - Math.pow(t / 0.6, 2)) + tw;
+    for (let i = 1; i <= 9; i++) {
+      const t = 1.0 - (i / 10.0);
+      const u = -wSpan * (1.0 - t) + (wSpan - tw) * t;
+      const arch = Math.sin(t * Math.PI) * 3.5;
+      const v = vBase + tw - arch;
       innerPts.push(transformPt(u, v));
     }
-    for (let i = 0; i <= 5; i++) {
-      const t = i / 5;
-      const u = -(wSpan - tw) + Math.pow(1.0 - t, 2) * 1.5;
-      const v = (hLeft - tw) * t - (1.0 - t) * 1.5 + tw;
+    for (let i = 1; i <= 5; i++) {
+      const t = i / 5.0;
+      const u = -wSpan + tw;
+      const v = (vBase + tw + 6.0) * (1.0 - t) + hLeft * t;
       innerPts.push(transformPt(u, v));
     }
     innerPts.push(transformPt(-wSpan + tw, hLeft));
@@ -570,13 +574,13 @@ export class LocalDicomLoader {
     if (actualCore && actualCore.length >= 8) {
       corePoly = actualCore;
     } else if (absDz <= 18.5) {
-      const rCoreU = 5.2 * (0.4 + 0.6 * sRound);
-      const rCoreV = 4.2 * (0.4 + 0.6 * sRound);
+      const rCoreU = (6.0 + 7.5 * sRound);
+      const rCoreV = (5.0 + 5.5 * sRound);
       const nCore = 24;
       for (let i = 0; i < nCore; i++) {
         const rad = (2 * Math.PI * i) / nCore;
         const u = rCoreU * Math.cos(rad);
-        const v = 2.0 + rCoreV * Math.sin(rad);
+        const v = rCoreV * Math.sin(rad);
         corePoly.push(transformPt(u, v));
       }
     }
@@ -706,7 +710,7 @@ export class LocalDicomLoader {
     // Pass actual metal contour traced on this slice if available
     const actualCore = (comp && comp.portContour && comp.portContour.length >= 8) ? comp.portContour : null;
 
-    const expContours = LocalDicomLoader.generateTissueExpanderContours(cx, cy + 2.0, pixelSpacing, isLeft, dz, actualCore);
+    const expContours = LocalDicomLoader.generateTissueExpanderContours(cx, cy, pixelSpacing, isLeft, dz, actualCore);
     const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy, 20);
 
     let artPx = 0;

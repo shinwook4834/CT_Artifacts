@@ -3,13 +3,13 @@
  * Dual-Mode: Uses FastAPI Backend (16GB RAM) if available, or 100% Client-Side Static if hosted on HF Static Space.
  */
 
-import { api } from "./api.js?v=2.4.2";
-import { LocalDicomLoader } from "./dicom-local.js?v=2.4.2";
-import { MedicalViewport } from "./viewport.js?v=2.4.2";
-import { ContourOverlay } from "./inspection.js?v=2.4.2";
-import { InspectionGlassComparator } from "./comparator.js?v=2.4.2";
-import { aiEngine } from "./onnx-mar.js?v=2.4.2";
-import { ProfileChart } from "./export-view.js?v=2.4.2";
+import { api } from "./api.js?v=2.4.3";
+import { LocalDicomLoader } from "./dicom-local.js?v=2.4.3";
+import { MedicalViewport } from "./viewport.js?v=2.4.3";
+import { ContourOverlay } from "./inspection.js?v=2.4.3";
+import { InspectionGlassComparator } from "./comparator.js?v=2.4.3";
+import { aiEngine } from "./onnx-mar.js?v=2.4.3";
+import { ProfileChart } from "./export-view.js?v=2.4.3";
 
 class AppState {
   constructor() {
@@ -339,7 +339,7 @@ function updateContourBadge(cnt) {
   const badge = document.getElementById("badge-contour-status");
   if (!badge) return;
   if (cnt && cnt.port && cnt.port.length > 0) {
-    badge.innerText = `🩺 ChemoPort: ${cnt.port_px || 0} px • Artifacts: ${cnt.art_px || 0} px`;
+    badge.innerText = `🩺 Expander: ${cnt.port_px || 0} px • Artifacts: ${cnt.art_px || 0} px`;
     badge.style.color = "#0d9488";
     badge.style.display = "inline-flex";
   } else {
