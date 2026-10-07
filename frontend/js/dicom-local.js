@@ -565,6 +565,168 @@ export class LocalDicomLoader {
     return streaks;
   }
 
+  static traceContourOfCluster(clusterPts) {
+    if (!clusterPts || clusterPts.length < 4) return null;
+    const w = 512;
+    const mask = new Uint8Array(w * w);
+    clusterPts.sort((a, b) => a.y !== b.y ? a.y - b.y : a.x - b.x);
+    const startX = clusterPts[0].x;
+    const startY = clusterPts[0].y;
+    for (const p of clusterPts) {
+      mask[p.y * w + p.x] = 1;
+    }
+
+    const dirs = [
+      [0, -1], [1, -1], [1, 0], [1, 1],
+      [0, 1], [-1, 1], [-1, 0], [-1, -1]
+    ];
+    const rawContour = [];
+    let currX = startX, currY = startY;
+    let dirIdx = 7;
+
+    rawContour.push([currX, currY]);
+
+    for (let step = 0; step < 2000; step++) {
+      let found = false;
+      for (let i = 0; i < 8; i++) {
+        const d = (dirIdx + i) % 8;
+        const nx = currX + dirs[d][0];
+        const ny = currY + dirs[d][1];
+        if (nx >= 0 && nx < w && ny >= 0 && ny < w && mask[ny * w + nx] === 1) {
+          currX = nx;
+          currY = ny;
+          dirIdx = (d + 5) % 8;
+          found = true;
+          break;
+        }
+      }
+      if (!found) break;
+
+      if (currX === startX && currY === startY && rawContour.length > 2) {
+        rawContour.push([currX, currY]);
+        break;
+      }
+      rawContour.push([currX, currY]);
+    }
+
+    if (rawContour.length < 4) return null;
+
+    // Cyclic moving-average smoothing (2-pass filter)
+    const N = rawContour.length;
+    let smooth = rawContour;
+    for (let pass = 0; pass < 2; pass++) {
+      const nextSmooth = [];
+      for (let i = 0; i < N; i++) {
+        const pPrev2 = smooth[(i - 2 + N) % N];
+        const pPrev1 = smooth[(i - 1 + N) % N];
+        const pCurr  = smooth[i];
+        const pNext1 = smooth[(i + 1) % N];
+        const pNext2 = smooth[(i + 2) % N];
+        const sx = 0.1 * pPrev2[0] + 0.2 * pPrev1[0] + 0.4 * pCurr[0] + 0.2 * pNext1[0] + 0.1 * pNext2[0];
+        const sy = 0.1 * pPrev2[1] + 0.2 * pPrev1[1] + 0.4 * pCurr[1] + 0.2 * pNext1[1] + 0.1 * pNext2[1];
+        nextSmooth.push([Math.round(sx * 10) / 10, Math.round(sy * 10) / 10]);
+      }
+      smooth = nextSmooth;
+    }
+
+    return smooth;
+  }
+
+  static findExpanderComponents(huArray, anchor = null) {
+    if (!anchor) {
+      const comp = LocalDicomLoader.findWhiteComponent(huArray, anchor);
+      return { contours: comp && comp.contour ? [comp.contour] : [], count: comp ? comp.count : 0 };
+    }
+
+    const w = 512;
+    const yStart = Math.max(20, Math.floor(anchor.y - 45));
+    const yEnd = Math.min(340, Math.ceil(anchor.y + 45));
+    const xStart = Math.max(40, Math.floor(anchor.x - 45));
+    const xEnd = Math.min(480, Math.ceil(anchor.x + 45));
+
+    let peak = -Infinity;
+    for (let y = yStart; y < yEnd; y++) {
+      const rowOffset = y * w;
+      for (let x = xStart; x < xEnd; x++) {
+        const val = huArray[rowOffset + x];
+        if (val > peak) peak = val;
+      }
+    }
+
+    const contours = [];
+    let totalCount = 0;
+
+    if (peak >= 12000) {
+      // Slices with the neodymium magnet: capture BOTH the magnet core and the U-bracket
+      // 1. Bottom Magnet Core (>= 5000 HU)
+      const ptsBottom = [];
+      for (let y = Math.floor(anchor.y - 12); y <= Math.ceil(anchor.y + 12); y++) {
+        for (let x = Math.floor(anchor.x - 20); x <= Math.ceil(anchor.x + 20); x++) {
+          if (huArray[y * w + x] >= 5000) ptsBottom.push({ x, y });
+        }
+      }
+      const cBottom = LocalDicomLoader.traceContourOfCluster(ptsBottom);
+      if (cBottom) {
+        contours.push(cBottom);
+        totalCount += ptsBottom.length;
+      }
+
+      // 2. U-Shape Bracket (above/surrounding magnet, >= 550 HU)
+      const ptsU = [];
+      for (let y = Math.floor(anchor.y - 25); y <= Math.ceil(anchor.y + 2); y++) {
+        for (let x = Math.floor(anchor.x - 22); x <= Math.ceil(anchor.x + 22); x++) {
+          if (y >= 186 && x >= 321 && x <= 334) continue; // exclude magnet core
+          if (huArray[y * w + x] >= 550) ptsU.push({ x, y });
+        }
+      }
+      const coordMap = new Map();
+      for (let i = 0; i < ptsU.length; i++) coordMap.set(ptsU[i].y * w + ptsU[i].x, i);
+      const visited = new Uint8Array(ptsU.length);
+      const clustersU = [];
+      for (let i = 0; i < ptsU.length; i++) {
+        if (visited[i]) continue;
+        const cl = [];
+        const queue = [i];
+        visited[i] = 1;
+        let head = 0;
+        while (head < queue.length) {
+          const curr = queue[head++];
+          const pt = ptsU[curr];
+          cl.push(pt);
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              const nx = pt.x + dx, ny = pt.y + dy;
+              const k = ny * w + nx;
+              if (coordMap.has(k)) {
+                const nIdx = coordMap.get(k);
+                if (!visited[nIdx]) { visited[nIdx] = 1; queue.push(nIdx); }
+              }
+            }
+          }
+        }
+        clustersU.push(cl);
+      }
+      clustersU.sort((a, b) => b.length - a.length);
+      if (clustersU.length > 0 && clustersU[0].length >= 10) {
+        const cU = LocalDicomLoader.traceContourOfCluster(clustersU[0]);
+        if (cU) {
+          contours.push(cU);
+          totalCount += clustersU[0].length;
+        }
+      }
+    } else {
+      // Slices without magnet (U-cup base, wings, upper dome): threshold 1550 HU
+      const comp = LocalDicomLoader.findWhiteComponent(huArray, anchor);
+      if (comp && comp.contour) {
+        contours.push(comp.contour);
+        totalCount += comp.count;
+      }
+    }
+
+    return { contours, count: totalCount };
+  }
+
   static extractContours(huArray, anchor = null, pixelSpacing = 1.0, sliceIdx = null, bestIdx = null, sliceThickness = 2.5, sliceLoc = null, bestLoc = null) {
     // Restrict contouring to slices within physical tissue expander range (|dz| <= 19.0 mm)
     if (anchor && bestIdx !== null && sliceIdx !== null) {
@@ -576,18 +738,15 @@ export class LocalDicomLoader {
       }
     }
 
-    // Pure contour of the region visible as white in All-HU window mode (hu >= 1550)
-    const comp = LocalDicomLoader.findWhiteComponent(huArray, anchor);
-    if (!comp || !comp.contour || comp.contour.length < 3) {
+    const comp = LocalDicomLoader.findExpanderComponents(huArray, anchor);
+    if (!comp || !comp.contours || comp.contours.length === 0) {
       return { port: [], art: [], port_px: 0, art_px: 0 };
     }
 
-    const { cx, cy, count, contour } = comp;
-
     return {
-      port: [contour],
+      port: comp.contours,
       art: [],
-      port_px: count,
+      port_px: comp.count,
       art_px: 0,
     };
   }
