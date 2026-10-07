@@ -193,9 +193,9 @@ export class LocalDicomLoader {
 
     for (let idx = 0; idx < slices.length; idx++) {
       const hu = slices[idx].hu;
-      const comp = LocalDicomLoader.findChemoPortComponent(hu, null);
-      if (comp && comp.score > bestScore) {
-        bestScore = comp.score;
+      const comp = LocalDicomLoader.findWhiteComponent(hu, null);
+      if (comp && comp.count > bestScore) {
+        bestScore = comp.count;
         bestIdx = idx;
         anchor = { x: comp.cx, y: comp.cy };
       }
@@ -204,16 +204,21 @@ export class LocalDicomLoader {
     return { bestIdx, anchor };
   }
 
-  static findChemoPortComponent(huArray, anchor = null) {
+  /**
+   * Directly extracts the high-density implant component visible as white in All-HU window mode.
+   * In All-HU (WL: 11000 / WW: 30000), pixels >= 1550 HU appear distinctly white.
+   * Performs 8-connected component grouping and Moore-Neighbor boundary tracing.
+   */
+  static findWhiteComponent(huArray, anchor = null) {
     const w = 512;
     const metalCoords = [];
 
-    const yStart = anchor ? Math.max(30, Math.floor(anchor.y - 50)) : 40;
-    const yEnd = anchor ? Math.min(320, Math.ceil(anchor.y + 50)) : 310;
-    const xStart = anchor ? Math.max(50, Math.floor(anchor.x - 50)) : 60;
-    const xEnd = anchor ? Math.min(460, Math.ceil(anchor.x + 50)) : 452;
+    const yStart = anchor ? Math.max(20, Math.floor(anchor.y - 60)) : 30;
+    const yEnd = anchor ? Math.min(340, Math.ceil(anchor.y + 60)) : 320;
+    const xStart = anchor ? Math.max(40, Math.floor(anchor.x - 60)) : 50;
+    const xEnd = anchor ? Math.min(480, Math.ceil(anchor.x + 60)) : 460;
 
-    const threshold = anchor ? 1600 : 1800;
+    const threshold = 1550;
 
     for (let y = yStart; y < yEnd; y++) {
       const rowOffset = y * w;
@@ -225,7 +230,7 @@ export class LocalDicomLoader {
       }
     }
 
-    if (metalCoords.length === 0) return null;
+    if (metalCoords.length < 4) return null;
 
     // Connected Component Analysis (8-connectivity)
     const coordMap = new Map();
@@ -242,11 +247,9 @@ export class LocalDicomLoader {
       const cluster = [];
       const queue = [i];
       visited[i] = 1;
-      let sumX = 0;
-      let sumY = 0;
-      let maxHu = -Infinity;
-
+      let sumX = 0, sumY = 0, maxHu = -Infinity;
       let head = 0;
+
       while (head < queue.length) {
         const currIdx = queue[head++];
         const pt = metalCoords[currIdx];
@@ -273,330 +276,110 @@ export class LocalDicomLoader {
       }
 
       const count = cluster.length;
-      const cx = sumX / count;
-      const cy = sumY / count;
-      clusters.push({ cluster, count, cx, cy, maxHu });
+      clusters.push({
+        cluster,
+        count,
+        cx: sumX / count,
+        cy: sumY / count,
+        maxHu
+      });
     }
 
     let bestCluster = null;
     let bestScore = -Infinity;
 
     for (const c of clusters) {
-      if (c.count < 4 || c.count > 1500) continue;
+      if (c.count < 4 || c.count > 2500) continue;
 
-      const distMidline = Math.abs(c.cx - 256);
-
-      let score = c.maxHu * 1.5 + Math.min(c.count, 250) * 12.0;
-      if (c.maxHu >= 2400) score += 6000;
-      if (distMidline > 20) score += 3000;
-      if (c.cy < 265) score += 2000;
-      if (distMidline < 12) score -= 4000;
-
+      let score = c.count * 10.0 + c.maxHu;
       if (anchor) {
         const dAnchor = Math.hypot(c.cx - anchor.x, c.cy - anchor.y);
         if (dAnchor > 55) continue;
         score -= dAnchor * 50.0;
       }
 
-      c.score = score;
       if (score > bestScore) {
         bestScore = score;
         bestCluster = c;
       }
     }
 
-    if (bestCluster && bestCluster.cluster) {
-      // 1. All-HU Adaptive Titanium Core Peak (accurately captures full U-shaped titanium cup border)
-      const tiThresh = bestCluster.maxHu >= 6000 ? Math.max(3200, Math.min(4500, bestCluster.maxHu * 0.16)) : Math.max(1600, bestCluster.maxHu * 0.60);
-      let sumWeightedX = 0, sumWeightedY = 0, sumWeights = 0;
-      let tiCount = 0;
+    if (!bestCluster) return null;
 
-      for (const pt of bestCluster.cluster) {
-        if (pt.val >= tiThresh) {
-          const w = Math.max(1, pt.val - tiThresh + 1);
-          sumWeightedX += pt.x * w;
-          sumWeightedY += pt.y * w;
-          sumWeights += w;
-          tiCount++;
+    // Mask ONLY bestCluster.cluster pixels
+    const mask = new Uint8Array(w * w);
+    bestCluster.cluster.sort((a, b) => a.y !== b.y ? a.y - b.y : a.x - b.x);
+    const startX = bestCluster.cluster[0].x;
+    const startY = bestCluster.cluster[0].y;
+
+    for (const pt of bestCluster.cluster) {
+      mask[pt.y * w + pt.x] = 1;
+    }
+
+    // Moore-Neighbor Boundary Tracing (Clockwise starting from North)
+    const dirs = [
+      [0, -1], [1, -1], [1, 0], [1, 1],
+      [0, 1], [-1, 1], [-1, 0], [-1, -1]
+    ];
+    const rawContour = [];
+    let currX = startX, currY = startY;
+    let dirIdx = 7;
+
+    rawContour.push([currX, currY]);
+
+    for (let step = 0; step < 1200; step++) {
+      let found = false;
+      for (let i = 0; i < 8; i++) {
+        const d = (dirIdx + i) % 8;
+        const nx = currX + dirs[d][0];
+        const ny = currY + dirs[d][1];
+        if (nx >= 0 && nx < w && ny >= 0 && ny < w && mask[ny * w + nx] === 1) {
+          currX = nx;
+          currY = ny;
+          dirIdx = (d + 5) % 8;
+          found = true;
+          break;
         }
       }
+      if (!found) break;
 
-      if (tiCount >= 4 && sumWeights > 0) {
-        bestCluster.cx = sumWeightedX / sumWeights;
-        bestCluster.cy = sumWeightedY / sumWeights;
-      } else {
-        let sumCoreX = 0, sumCoreY = 0, coreCount = 0;
-        for (const pt of bestCluster.cluster) {
-          if (pt.val >= 2200) {
-            sumCoreX += pt.x;
-            sumCoreY += pt.y;
-            coreCount++;
-          }
-        }
-        if (coreCount >= 4) {
-          bestCluster.cx = sumCoreX / coreCount;
-          bestCluster.cy = sumCoreY / coreCount;
-        }
+      if (currX === startX && currY === startY && rawContour.length > 2) {
+        rawContour.push([currX, currY]);
+        break;
       }
+      rawContour.push([currX, currY]);
+    }
 
-      // 2. Exact Boundary Tracing on All-HU Titanium Core (Moore-Neighbor Tracer)
-      const mask = new Uint8Array(w * w);
-      let startX = -1, startY = -1;
-      const minX = Math.max(0, Math.floor(bestCluster.cx - 20));
-      const maxX = Math.min(w - 1, Math.ceil(bestCluster.cx + 20));
-      const minY = Math.max(0, Math.floor(bestCluster.cy - 20));
-      const maxY = Math.min(w - 1, Math.ceil(bestCluster.cy + 20));
+    if (rawContour.length < 4) return null;
 
-      for (let y = minY; y <= maxY; y++) {
-        const rowOff = y * w;
-        for (let x = minX; x <= maxX; x++) {
-          if (huArray[rowOff + x] >= tiThresh) {
-            mask[rowOff + x] = 1;
-            if (startY === -1) {
-              startX = x;
-              startY = y;
-            }
-          }
-        }
+    // Cyclic moving-average smoothing (2-pass filter)
+    const N = rawContour.length;
+    let smooth = rawContour;
+    for (let pass = 0; pass < 2; pass++) {
+      const nextSmooth = [];
+      for (let i = 0; i < N; i++) {
+        const pPrev2 = smooth[(i - 2 + N) % N];
+        const pPrev1 = smooth[(i - 1 + N) % N];
+        const pCurr  = smooth[i];
+        const pNext1 = smooth[(i + 1) % N];
+        const pNext2 = smooth[(i + 2) % N];
+        const sx = 0.1 * pPrev2[0] + 0.2 * pPrev1[0] + 0.4 * pCurr[0] + 0.2 * pNext1[0] + 0.1 * pNext2[0];
+        const sy = 0.1 * pPrev2[1] + 0.2 * pPrev1[1] + 0.4 * pCurr[1] + 0.2 * pNext1[1] + 0.1 * pNext2[1];
+        nextSmooth.push([Math.round(sx * 10) / 10, Math.round(sy * 10) / 10]);
       }
-
-      if (startY !== -1) {
-        // 8-direction Moore-Neighbor boundary tracing
-        const dirs = [
-          [1, 0], [1, 1], [0, 1], [-1, 1],
-          [-1, 0], [-1, -1], [0, -1], [1, -1]
-        ];
-        const rawContour = [];
-        let currX = startX, currY = startY;
-        let backtrack = 6;
-
-        for (let step = 0; step < 600; step++) {
-          rawContour.push([currX, currY]);
-          let found = false;
-          for (let d = 0; d < 8; d++) {
-            const dIdx = (backtrack + d) % 8;
-            const nx = currX + dirs[dIdx][0];
-            const ny = currY + dirs[dIdx][1];
-            if (nx >= 0 && nx < w && ny >= 0 && ny < w && mask[ny * w + nx] === 1) {
-              currX = nx;
-              currY = ny;
-              backtrack = (dIdx + 5) % 8;
-              found = true;
-              break;
-            }
-          }
-          if (!found || (currX === startX && currY === startY && rawContour.length > 2)) {
-            break;
-          }
-        }
-
-        // Cyclic moving-average smoothing (2-pass filter)
-        if (rawContour.length >= 8) {
-          const N = rawContour.length;
-          let smooth = rawContour;
-          for (let pass = 0; pass < 2; pass++) {
-            const nextSmooth = [];
-            for (let i = 0; i < N; i++) {
-              const pPrev2 = smooth[(i - 2 + N) % N];
-              const pPrev1 = smooth[(i - 1 + N) % N];
-              const pCurr  = smooth[i];
-              const pNext1 = smooth[(i + 1) % N];
-              const pNext2 = smooth[(i + 2) % N];
-              const sx = 0.1 * pPrev2[0] + 0.2 * pPrev1[0] + 0.4 * pCurr[0] + 0.2 * pNext1[0] + 0.1 * pNext2[0];
-              const sy = 0.1 * pPrev2[1] + 0.2 * pPrev1[1] + 0.4 * pCurr[1] + 0.2 * pNext1[1] + 0.1 * pNext2[1];
-              nextSmooth.push([Math.round(sx * 10) / 10, Math.round(sy * 10) / 10]);
-            }
-            smooth = nextSmooth;
-          }
-
-          bestCluster.portContour = smooth;
-
-          // Upper crest facing skin: Contiguous run around apex (min y) where y <= cy
-          let minYVal = Infinity;
-          let topIdx = 0;
-          for (let i = 0; i < N; i++) {
-            if (smooth[i][1] < minYVal) {
-              minYVal = smooth[i][1];
-              topIdx = i;
-            }
-          }
-
-          const cy = bestCluster.cy;
-          const backPts = [];
-          for (let step = 1; step < N; step++) {
-            const idx = (topIdx - step + N) % N;
-            if (smooth[idx][1] <= cy) {
-              backPts.push(smooth[idx]);
-            } else {
-              break;
-            }
-          }
-
-          const fwdPts = [];
-          for (let step = 1; step < N; step++) {
-            const idx = (topIdx + step) % N;
-            if (smooth[idx][1] <= cy) {
-              fwdPts.push(smooth[idx]);
-            } else {
-              break;
-            }
-          }
-
-          backPts.reverse();
-          const septumArc = [...backPts, smooth[topIdx], ...fwdPts];
-          if (septumArc.length >= 2) {
-            bestCluster.septumArc = septumArc;
-          }
-        }
-      }
+      smooth = nextSmooth;
     }
-
-    return bestCluster;
-  }
-
-  /**
-   * Generates exact anatomical cross-section contours of the B. Braun Celsite® port
-   * on the Axial CT plane (Housing + Cannula + Titanium Chamber + Silicone Septum).
-   * 
-   * Anatomical orientation:
-   * - Flat base plate seated flush against deep pectoral muscle wall.
-   * - Silicone septum dome elevated on anterior superficial face, DIRECTLY FACING SKIN
-   *   to accept Huber needle puncture from the anterior skin surface.
-   * - Outflow cannula exiting medially towards the subclavian vein catheter.
-   * - Low-profile nose tapering laterally into subcutaneous fat tissue.
-   */
-  /**
-   * Generates exact anatomical contours of the Round Breast Tissue Expander Injection Port Assembly
-   * across all slices on the Axial CT plane:
-   * - 3D Spherical/Round Expander Profile:
-   *   The U-bracket grows to its maximum height & width at the equator (dz = 0)
-   *   and smoothly shrinks towards superior and inferior margins.
-   * 1. U-shaped Frame / Bracket (needle stop & suture tabs, tilted along chest wall)
-   * 2. Central High-Density Magnetic/Metallic Core ("아래 밝은 물질")
-   */
-  static generateTissueExpanderContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true, dz = 0.0, actualCore = null) {
-    const absDz = Math.abs(dz);
-    if (absDz > 19.0) {
-      return {
-        uBracketPoly: [],
-        corePoly: [],
-        composite: []
-      };
-    }
-
-    // Chest wall inclination: +6.5 deg on left breast (cx > 256), -6.5 deg on right breast (cx <= 256)
-    const angleDeg = isLeftHemisphere ? 6.5 : -6.5;
-    const theta = (angleDeg * Math.PI) / 180.0;
-
-    const tx = Math.cos(theta);
-    const ty = Math.sin(theta);
-    // Anterior unit vector (pointing up towards skin)
-    const nx = isLeftHemisphere ? Math.sin(theta) : -Math.sin(theta);
-    const ny = -Math.cos(theta);
-
-    const transformPt = (u, v) => {
-      return [
-        Math.round((cx + u * tx + v * nx) * 10) / 10,
-        Math.round((cy + u * ty + v * ny) * 10) / 10,
-      ];
-    };
-
-    // 3D Spherical/Round dome scale factor:
-    // Equator at dz = 0 mm (maximum dimensions), tapering smoothly towards margins (|dz| -> 19 mm)
-    const Rz = 19.0;
-    const sRound = Math.sqrt(Math.max(0.0, 1.0 - Math.pow(absDz / Rz, 2)));
-
-    // 1. Full-Scale All-HU Curved U-shaped Frame / Bracket:
-    // Follows the actual gray pillars and bottom shelf visible in All-HU window mode (width ~142 px)
-    const wSpan = 46.0 + 25.0 * sRound; // ~71 px half-width at equator (142 px total span)
-    const hLeft = 32.0 + 34.0 * sRound; // ~66 px left arm height
-    const hRight = 20.0 + 22.0 * sRound; // ~42 px right arm height
-    const tw = 6.0;                     // 6 px wall thickness
-    const vBase = -18.5;                // Base shelf depth below metal core center
-
-    const outerPts = [];
-    const innerPts = [];
-
-    // Outer profile:
-    // Left tip
-    outerPts.push(transformPt(-wSpan, hLeft));
-    // Descend along outer left wall
-    for (let i = 1; i <= 5; i++) {
-      const t = i / 5.0;
-      const u = -wSpan;
-      const v = hLeft * (1.0 - t) + (vBase + 6.0) * t;
-      outerPts.push(transformPt(u, v));
-    }
-    // Outer bottom shelf curved cradle (left to right)
-    for (let i = 1; i <= 9; i++) {
-      const t = i / 10.0;
-      const u = -wSpan * (1.0 - t) + wSpan * t;
-      const arch = Math.sin(t * Math.PI) * 3.5;
-      const v = vBase - arch;
-      outerPts.push(transformPt(u, v));
-    }
-    // Ascend along outer right wall
-    for (let i = 1; i <= 5; i++) {
-      const t = i / 5.0;
-      const u = wSpan;
-      const v = (vBase + 6.0) * (1.0 - t) + hRight * t;
-      outerPts.push(transformPt(u, v));
-    }
-    outerPts.push(transformPt(wSpan, hRight));
-
-    // Inner profile (right to left):
-    innerPts.push(transformPt(wSpan - tw, hRight));
-    for (let i = 1; i <= 5; i++) {
-      const t = i / 5.0;
-      const u = wSpan - tw;
-      const v = hRight * (1.0 - t) + (vBase + tw + 6.0) * t;
-      innerPts.push(transformPt(u, v));
-    }
-    for (let i = 1; i <= 9; i++) {
-      const t = 1.0 - (i / 10.0);
-      const u = -wSpan * (1.0 - t) + (wSpan - tw) * t;
-      const arch = Math.sin(t * Math.PI) * 3.5;
-      const v = vBase + tw - arch;
-      innerPts.push(transformPt(u, v));
-    }
-    for (let i = 1; i <= 5; i++) {
-      const t = i / 5.0;
-      const u = -wSpan + tw;
-      const v = (vBase + tw + 6.0) * (1.0 - t) + hLeft * t;
-      innerPts.push(transformPt(u, v));
-    }
-    innerPts.push(transformPt(-wSpan + tw, hLeft));
-
-    const uBracketPoly = [...outerPts, ...innerPts];
-
-    // 2. Central High-Density Magnetic/Metallic Core ("아래 밝은 물질")
-    let corePoly = [];
-    if (actualCore && actualCore.length >= 8) {
-      corePoly = actualCore;
-    } else if (absDz <= 18.5) {
-      const rCoreU = (6.0 + 7.5 * sRound);
-      const rCoreV = (5.0 + 5.5 * sRound);
-      const nCore = 24;
-      for (let i = 0; i < nCore; i++) {
-        const rad = (2 * Math.PI * i) / nCore;
-        const u = rCoreU * Math.cos(rad);
-        const v = rCoreV * Math.sin(rad);
-        corePoly.push(transformPt(u, v));
-      }
-    }
-
-    const composite = [uBracketPoly, corePoly];
 
     return {
-      uBracketPoly,
-      corePoly,
-      composite
+      cx: bestCluster.cx,
+      cy: bestCluster.cy,
+      count: bestCluster.count,
+      contour: smooth
     };
   }
 
-  static tracePortContour(cluster, cx, cy, pixelSpacing = 1.0, isLeft = true) {
-    const exp = LocalDicomLoader.generateTissueExpanderContours(cx, cy, pixelSpacing, isLeft, 0.0);
-    return exp.composite;
+  static findChemoPortComponent(huArray, anchor = null) {
+    return LocalDicomLoader.findWhiteComponent(huArray, anchor);
   }
 
   static detectStreaks(huArray, cx, cy, portRadius = 15) {
@@ -660,58 +443,14 @@ export class LocalDicomLoader {
   }
 
   static extractContours(huArray, anchor = null, pixelSpacing = 1.0, sliceIdx = null, bestIdx = null, sliceThickness = 2.5, sliceLoc = null, bestLoc = null) {
-    let dz = 0.0;
-    if (sliceLoc !== null && bestLoc !== null && !isNaN(sliceLoc) && !isNaN(bestLoc)) {
-      dz = sliceLoc - bestLoc;
-    } else if (sliceIdx !== null && bestIdx !== null) {
-      dz = (sliceIdx - bestIdx) * (sliceThickness || 2.5);
-    }
-    const absDz = Math.abs(dz);
-
-    // Physical Tissue Expander port total thickness along Z is ~30 mm (+/- 15 mm from center).
-    // Beyond +/- 16.0 mm, no injection port cross-section exists on CT.
-    if (absDz > 19.0) {
+    // Pure contour of the region visible as white in All-HU window mode (hu >= 1550)
+    const comp = LocalDicomLoader.findWhiteComponent(huArray, anchor);
+    if (!comp || !comp.contour || comp.contour.length < 3) {
       return { port: [], art: [], port_px: 0, art_px: 0 };
     }
 
-    // Detect high-density metal / magnetic core component on this slice
-    const comp = LocalDicomLoader.findChemoPortComponent(huArray, anchor);
-    let portCenter = null;
-    let portPx = 0;
-
-    if (comp && comp.count >= 4) {
-      // Local metal component detected on this slice
-      if (anchor) {
-        const d = Math.hypot(comp.cx - anchor.x, comp.cy - anchor.y);
-        if (d <= 50) {
-          // Follow actual metal centroid directly on this slice
-          portCenter = { x: comp.cx, y: comp.cy };
-          portPx = comp.count;
-        } else {
-          portCenter = { x: anchor.x, y: anchor.y };
-          portPx = comp.count;
-        }
-      } else {
-        portCenter = { x: comp.cx, y: comp.cy };
-        portPx = comp.count;
-      }
-    } else if (anchor) {
-      portCenter = { x: anchor.x, y: anchor.y };
-      portPx = 80;
-    }
-
-    if (!portCenter) {
-      return { port: [], art: [], port_px: 0, art_px: 0 };
-    }
-
-    const { x: cx, y: cy } = portCenter;
-    const isLeft = cx > 256;
-    
-    // Pass actual metal contour traced on this slice if available
-    const actualCore = (comp && comp.portContour && comp.portContour.length >= 8) ? comp.portContour : null;
-
-    const expContours = LocalDicomLoader.generateTissueExpanderContours(cx, cy, pixelSpacing, isLeft, dz, actualCore);
-    const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy, 20);
+    const { cx, cy, count, contour } = comp;
+    const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy, 18);
 
     let artPx = 0;
     for (const s of streaks) {
@@ -719,9 +458,9 @@ export class LocalDicomLoader {
     }
 
     return {
-      port: expContours.composite,
+      port: [contour],
       art: streaks,
-      port_px: portPx,
+      port_px: count,
       art_px: artPx,
     };
   }
