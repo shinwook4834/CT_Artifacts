@@ -159,7 +159,10 @@ export class LocalDicomLoader {
     const pixelRep = dataSet.uint16("x00280103") || 0; // 0 = unsigned, 1 = signed
     
     // Slice safe copy to ensure byte alignment
-    const sliceBuffer = buffer.slice(pixelOffset, pixelOffset + numPixels * 2);
+    const arrayBuffer = (buffer instanceof ArrayBuffer)
+      ? buffer
+      : (buffer && buffer.buffer ? buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) : buffer);
+    const sliceBuffer = arrayBuffer.slice(pixelOffset, pixelOffset + numPixels * 2);
     const rawArray = pixelRep === 1 ? new Int16Array(sliceBuffer) : new Uint16Array(sliceBuffer);
 
     // Compute HU array (Int16)
@@ -186,18 +189,122 @@ export class LocalDicomLoader {
     };
   }
 
+  static findCandidateClusters(huArray, options = {}) {
+    const w = 512;
+    const yMin = options.yMin !== undefined ? options.yMin : 60;
+    const yMax = options.yMax !== undefined ? options.yMax : 260;
+    const xMin = options.xMin !== undefined ? options.xMin : 40;
+    const xMax = options.xMax !== undefined ? options.xMax : 472;
+    const minLateralOffset = options.minLateralOffset !== undefined ? options.minLateralOffset : 25;
+    const threshold = options.threshold !== undefined ? options.threshold : 1550;
+
+    const metalCoords = [];
+    for (let y = yMin; y <= yMax; y++) {
+      const rowOffset = y * w;
+      for (let x = xMin; x <= xMax; x++) {
+        if (minLateralOffset > 0 && Math.abs(x - 256) < minLateralOffset) continue;
+        const val = huArray[rowOffset + x];
+        if (val >= threshold) {
+          metalCoords.push({ x, y, val });
+        }
+      }
+    }
+
+    if (metalCoords.length < 4) return [];
+
+    const coordMap = new Map();
+    for (let i = 0; i < metalCoords.length; i++) {
+      coordMap.set(metalCoords[i].y * w + metalCoords[i].x, i);
+    }
+
+    const visited = new Uint8Array(metalCoords.length);
+    const clusters = [];
+
+    for (let i = 0; i < metalCoords.length; i++) {
+      if (visited[i]) continue;
+      const cluster = [];
+      const queue = [i];
+      visited[i] = 1;
+      let sumX = 0, sumY = 0, maxHu = -Infinity;
+      let head = 0;
+
+      while (head < queue.length) {
+        const currIdx = queue[head++];
+        const pt = metalCoords[currIdx];
+        cluster.push(pt);
+        sumX += pt.x;
+        sumY += pt.y;
+        if (pt.val > maxHu) maxHu = pt.val;
+
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const nx = pt.x + dx;
+            const ny = pt.y + dy;
+            const nKey = ny * w + nx;
+            if (coordMap.has(nKey)) {
+              const nIdx = coordMap.get(nKey);
+              if (!visited[nIdx]) {
+                visited[nIdx] = 1;
+                queue.push(nIdx);
+              }
+            }
+          }
+        }
+      }
+
+      const count = cluster.length;
+      if (count >= 4 && count <= 800) {
+        clusters.push({
+          cluster,
+          count,
+          cx: sumX / count,
+          cy: sumY / count,
+          maxHu
+        });
+      }
+    }
+
+    return clusters;
+  }
+
   static findSeriesChemoPortAnchor(slices) {
     let bestIdx = Math.floor(slices.length / 2);
     let bestScore = -Infinity;
     let anchor = null;
 
+    // Search anterior breast zone (y in [60, 260], |x - 256| >= 25)
+    // for tissue expander magnetic dome and port components
     for (let idx = 0; idx < slices.length; idx++) {
       const hu = slices[idx].hu;
-      const comp = LocalDicomLoader.findWhiteComponent(hu, null);
-      if (comp && comp.count > bestScore) {
-        bestScore = comp.count;
-        bestIdx = idx;
-        anchor = { x: comp.cx, y: comp.cy };
+      const clusters = LocalDicomLoader.findCandidateClusters(hu, {
+        yMin: 60, yMax: 260,
+        xMin: 40, xMax: 472,
+        minLateralOffset: 25,
+        threshold: 1550
+      });
+
+      for (const c of clusters) {
+        // Strongly prioritize peak metal (magnetic dome reaches 15000 ~ 28000 HU)
+        let score = c.maxHu * 2.0 + c.count * 5.0;
+        if (c.maxHu >= 15000) score += 20000;
+        if (score > bestScore) {
+          bestScore = score;
+          bestIdx = idx;
+          anchor = { x: c.cx, y: c.cy };
+        }
+      }
+    }
+
+    // Fallback if no anterior breast cluster was found
+    if (!anchor) {
+      for (let idx = 0; idx < slices.length; idx++) {
+        const comp = LocalDicomLoader.findWhiteComponent(slices[idx].hu, null);
+        if (comp && comp.count > bestScore) {
+          bestScore = comp.count;
+          bestIdx = idx;
+          anchor = { x: comp.cx, y: comp.cy };
+        }
       }
     }
 
@@ -443,6 +550,16 @@ export class LocalDicomLoader {
   }
 
   static extractContours(huArray, anchor = null, pixelSpacing = 1.0, sliceIdx = null, bestIdx = null, sliceThickness = 2.5, sliceLoc = null, bestLoc = null) {
+    // Restrict contouring to slices within physical tissue expander range (|dz| <= 19.0 mm)
+    if (anchor && bestIdx !== null && sliceIdx !== null) {
+      const dz = (sliceLoc !== null && bestLoc !== null)
+        ? Math.abs(sliceLoc - bestLoc)
+        : Math.abs(sliceIdx - bestIdx) * sliceThickness;
+      if (dz > 19.0) {
+        return { port: [], art: [], port_px: 0, art_px: 0 };
+      }
+    }
+
     // Pure contour of the region visible as white in All-HU window mode (hu >= 1550)
     const comp = LocalDicomLoader.findWhiteComponent(huArray, anchor);
     if (!comp || !comp.contour || comp.contour.length < 3) {
