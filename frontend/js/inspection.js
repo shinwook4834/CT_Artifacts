@@ -94,14 +94,10 @@ export class ContourOverlay {
           ctx.shadowColor = "#38bdf8";
           ctx.shadowBlur = 10 / this.zoom;
         } else if (pIdx === 2) {
-          // Titanium Chamber Cup (All-HU Titanium Reservoir: U-Cup Wall Ribbon + Bold Outer U-Rim)
-          ctx.strokeStyle = "#f8fafc";
-          ctx.fillStyle = "rgba(248, 250, 252, 0.32)";
-          ctx.lineWidth = 2.0 / this.zoom;
-          ctx.shadowColor = "#94a3b8";
-          ctx.shadowBlur = 8 / this.zoom;
+          // Titanium Chamber Cup (All-HU Titanium Reservoir: Solid U-Cup Wall Fill + Crisp Outer U-Rim)
+          ctx.fillStyle = "rgba(248, 250, 252, 0.22)";
 
-          // 1. Draw the U-cup ribbon (solid titanium wall filled, interior cavity and top aperture clear)
+          // 1. Subtle translucent fill inside the titanium cup wall
           ctx.beginPath();
           ctx.moveTo(poly[0][0], poly[0][1]);
           for (let i = 1; i < poly.length; i++) {
@@ -109,16 +105,18 @@ export class ContourOverlay {
           }
           ctx.closePath();
           ctx.fill();
-          ctx.stroke();
+          // Do NOT stroke entire 26-point polygon: stroking inner points 16..25 produces a hollow double-line wire loop.
 
           // 2. Bold Outer U-Border Rim (coincides strictly with visible U-shape in All-HU CT)
           const outerCount = Math.min(16, poly.length);
           if (outerCount >= 8) {
             ctx.beginPath();
             ctx.strokeStyle = "#ffffff";
-            ctx.lineWidth = 2.8 / this.zoom;
+            ctx.lineWidth = 3.0 / this.zoom;
             ctx.shadowColor = "#ffffff";
-            ctx.shadowBlur = 8 / this.zoom;
+            ctx.shadowBlur = 6 / this.zoom;
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
             ctx.moveTo(poly[0][0], poly[0][1]);
             for (let i = 1; i < outerCount; i++) {
               ctx.lineTo(poly[i][0], poly[i][1]);

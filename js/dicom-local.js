@@ -61,9 +61,11 @@ export class LocalDicomLoader {
     const thickness = slices[0].sliceThickness || 2.5;
 
     // Extract robust B. Braun Celsite CAD vector contours for all slices
+    const bestLoc = (slices[bestIdx] && slices[bestIdx].sliceLocation !== undefined) ? slices[bestIdx].sliceLocation : null;
     const contoursMap = slices.map((sl, idx) => {
       const ps = sl.pixelSpacing ? sl.pixelSpacing[0] : (slices[0].pixelSpacing ? slices[0].pixelSpacing[0] : 1.0);
-      return LocalDicomLoader.extractContours(sl.hu, anchor, ps, idx, bestIdx, thickness);
+      const slLoc = sl.sliceLocation !== undefined ? sl.sliceLocation : null;
+      return LocalDicomLoader.extractContours(sl.hu, anchor, ps, idx, bestIdx, thickness, slLoc, bestLoc);
     });
 
     return {
@@ -463,7 +465,25 @@ export class LocalDicomLoader {
    * - Outflow cannula exiting medially towards the subclavian vein catheter.
    * - Low-profile nose tapering laterally into subcutaneous fat tissue.
    */
-  static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true, size = 'standard') {
+  static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true, size = 'standard', dz = 0.0) {
+    const absDz = Math.abs(dz);
+    if (absDz > 6.8) {
+      return {
+        housingPoly: [],
+        cannulaPoly: [],
+        chamberPoly: [],
+        septumPoly: [],
+        composite: []
+      };
+    }
+
+    // 3D Z-axis spherical dome scaling factor:
+    // At center (dz = 0): scale = 1.0 (full 12.5 mm titanium cup)
+    // As dz moves away from center (+/- 6 mm): scale smoothly shrinks with dome geometry
+    const sChamber = Math.sqrt(Math.max(0.20, 1.0 - Math.pow(absDz / 7.0, 2)));
+    const sHousing = Math.sqrt(Math.max(0.35, 1.0 - Math.pow(absDz / 7.5, 2)));
+    const includeCannula = absDz <= 2.8;
+
     const pxScale = 1.0 / (pixelSpacing || 1.0);
     const theta = (18.0 * Math.PI) / 180.0;
 
@@ -526,19 +546,36 @@ export class LocalDicomLoader {
       [-4.33, -0.35],
       [-4.44,  0.94]
     ];
-    const chamberPoly = uCupMm.map(p => transformPt(p[0], p[1]));
+
+    // Scale chamber around its geometric centroid
+    let sumCu = 0, sumCv = 0;
+    for (let i = 0; i < 16; i++) {
+      sumCu += uCupMm[i][0];
+      sumCv += uCupMm[i][1];
+    }
+    const cU = sumCu / 16;
+    const cV = sumCv / 16;
+
+    const scaledChamberMm = uCupMm.map(p => [
+      cU + (p[0] - cU) * sChamber,
+      cV + (p[1] - cV) * sChamber
+    ]);
+    const chamberPoly = scaledChamberMm.map(p => transformPt(p[0], p[1]));
 
     // 2. Silicone Septum Puncture Dome (in true physical mm, facing anterior skin)
     // Flushes across top aperture of U-cup and arches anteriorly towards skin for needle puncture
     const septumPoly = [];
     const nSeptum = 16;
-    const uStart = -4.44, uEnd = 3.31;
-    const vStart = 0.94, vEnd = 3.04;
+    const uStart = cU + (-4.44 - cU) * sChamber;
+    const uEnd   = cU + ( 3.31 - cU) * sChamber;
+    const vStart = cV + ( 0.94 - cV) * sChamber;
+    const vEnd   = cV + ( 3.04 - cV) * sChamber;
+
     for (let i = 0; i <= nSeptum; i++) {
       const t = i / nSeptum;
       const u = uStart + (uEnd - uStart) * t;
       const vBase = vStart + (vEnd - vStart) * t;
-      const v = vBase + 3.0 * Math.sin(Math.PI * t);
+      const v = vBase + (3.0 * sChamber) * Math.sin(Math.PI * t);
       septumPoly.push(transformPt(u, v));
     }
     septumPoly.push(transformPt(uStart, vStart));
@@ -571,32 +608,52 @@ export class LocalDicomLoader {
       // Medial anterior shoulder
       [-7.0,  0.6],
       [-9.0, -0.4],
-      // Medial cannula exit shoulder
       [-10.2, -1.5],
       [-10.5, -2.5],
       [-9.8, -3.2]
     ];
-    const housingPoly = housingPtsMm.map(p => transformPt(p[0], p[1]));
+    let sumHu = 0, sumHv = 0;
+    for (let i = 0; i < housingPtsMm.length; i++) {
+      sumHu += housingPtsMm[i][0];
+      sumHv += housingPtsMm[i][1];
+    }
+    const hU = sumHu / housingPtsMm.length;
+    const hV = sumHv / housingPtsMm.length;
 
-    // 4. Outflow Cannula Stem (in true physical mm, exiting medially towards vein catheter)
-    const cannulaPoly = [
+    const scaledHousingMm = housingPtsMm.map(p => [
+      hU + (p[0] - hU) * sHousing,
+      hV + (p[1] - hV) * sHousing
+    ]);
+    const housingPoly = scaledHousingMm.map(p => transformPt(p[0], p[1]));
+
+    // 4. Outflow Cannula Stem (only included on equatorial slices near catheter exit: |dz| <= 2.8 mm)
+    const cannulaPoly = includeCannula ? [
       transformPt(-5.8, -1.6),
       transformPt(-17.5, -1.6),
       transformPt(-17.5,  0.6),
       transformPt(-5.8,  0.6),
-    ];
+    ] : [];
+
+    const composite = [housingPoly];
+    if (cannulaPoly.length > 0) {
+      composite.push(cannulaPoly);
+    } else {
+      composite.push([]); // Keep index 1 as placeholder for cannula
+    }
+    composite.push(chamberPoly); // Index 2: chamber
+    composite.push(septumPoly);  // Index 3: septum
 
     return {
       housingPoly,
       cannulaPoly,
       chamberPoly,
       septumPoly,
-      composite: [housingPoly, cannulaPoly, chamberPoly, septumPoly],
+      composite,
     };
   }
 
   static tracePortContour(cluster, cx, cy, pixelSpacing = 1.0, isLeft = true) {
-    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, 'standard');
+    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, 'standard', 0.0);
     return cad.composite;
   }
 
@@ -660,34 +717,51 @@ export class LocalDicomLoader {
     return streaks;
   }
 
-  static extractContours(huArray, anchor = null, pixelSpacing = 1.0, sliceIdx = null, bestIdx = null, sliceThickness = 2.5) {
-    // Physical Celsite port thickness is 12 mm; with 2.5 mm slice thickness that corresponds to +/- 4 slices (9 slices total)
-    const maxSliceDist = Math.max(2, Math.round(10.0 / (sliceThickness || 2.5)));
-    const isPortSlice = (sliceIdx !== null && bestIdx !== null)
-      ? Math.abs(sliceIdx - bestIdx) <= maxSliceDist
-      : true;
+  static extractContours(huArray, anchor = null, pixelSpacing = 1.0, sliceIdx = null, bestIdx = null, sliceThickness = 2.5, sliceLoc = null, bestLoc = null) {
+    let dz = 0.0;
+    if (sliceLoc !== null && bestLoc !== null && !isNaN(sliceLoc) && !isNaN(bestLoc)) {
+      dz = sliceLoc - bestLoc;
+    } else if (sliceIdx !== null && bestIdx !== null) {
+      dz = (sliceIdx - bestIdx) * (sliceThickness || 2.5);
+    }
+    const absDz = Math.abs(dz);
+
+    // Physical Celsite port total thickness is ~11-12 mm.
+    // Beyond +/- 6.8 mm from equatorial center, no port cross-section exists on CT.
+    if (absDz > 6.8) {
+      return { port: [], art: [], port_px: 0, art_px: 0 };
+    }
 
     // Detect ChemoPort component or fallback
     const comp = LocalDicomLoader.findChemoPortComponent(huArray, anchor);
     let portCenter = null;
     let portPx = 0;
 
-    if (anchor && isPortSlice) {
-      // Rock-solid stationary anchor across all port slices (prevents up/down jitter during slice navigation)
-      portCenter = { x: anchor.x, y: anchor.y };
-      portPx = comp ? comp.count : 80;
+    if (anchor) {
+      // If a local slice metal component is found close to the anchor, blend smoothly
+      // to follow slight chest wall inclination while preventing sudden jumps on noise/streaks
+      if (comp && comp.count >= 4 && Math.hypot(comp.cx - anchor.x, comp.cy - anchor.y) <= 8) {
+        portCenter = {
+          x: Math.round((anchor.x * 0.3 + comp.cx * 0.7) * 10) / 10,
+          y: Math.round((anchor.y * 0.3 + comp.cy * 0.7) * 10) / 10,
+        };
+        portPx = comp.count;
+      } else {
+        portCenter = { x: anchor.x, y: anchor.y };
+        portPx = comp ? comp.count : 80;
+      }
     } else if (comp && comp.count >= 4 && comp.maxHu >= 1800) {
       portCenter = { x: comp.cx, y: comp.cy };
       portPx = comp.count;
     }
 
-    if (!portCenter || !isPortSlice) {
+    if (!portCenter) {
       return { port: [], art: [], port_px: 0, art_px: 0 };
     }
 
     const { x: cx, y: cy } = portCenter;
     const isLeft = cx > 256;
-    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, 'standard');
+    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, 'standard', dz);
     const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy, 14);
 
     let artPx = 0;
