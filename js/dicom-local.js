@@ -325,7 +325,23 @@ export class LocalDicomLoader {
     const xStart = anchor ? Math.max(40, Math.floor(anchor.x - 60)) : 50;
     const xEnd = anchor ? Math.min(480, Math.ceil(anchor.x + 60)) : 460;
 
-    const threshold = 1550;
+    // Determine local peak in anchor region to select adaptive threshold
+    let peak = -Infinity;
+    for (let y = yStart; y < yEnd; y++) {
+      const rowOffset = y * w;
+      for (let x = xStart; x < xEnd; x++) {
+        const val = huArray[rowOffset + x];
+        if (val > peak) peak = val;
+      }
+    }
+
+    // Adaptive threshold:
+    // Slices containing the neodymium magnet (peak >= 12000 HU) generate vertical streak halo of 1500~3500 HU.
+    // In All-HU (WL: 11000 / WW: 30000), only the magnet core (>= 5500 HU) appears bright white.
+    // Slices without the magnet (U-cup/wings, peak < 7000 HU) have no halo, where 1550 HU traces the entire structure.
+    let threshold = 1550;
+    if (peak >= 12000) threshold = 5500;
+    else if (peak >= 7000) threshold = 3500;
 
     for (let y = yStart; y < yEnd; y++) {
       const rowOffset = y * w;
@@ -567,18 +583,12 @@ export class LocalDicomLoader {
     }
 
     const { cx, cy, count, contour } = comp;
-    const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy, 18);
-
-    let artPx = 0;
-    for (const s of streaks) {
-      artPx += 45;
-    }
 
     return {
       port: [contour],
-      art: streaks,
+      art: [],
       port_px: count,
-      art_px: artPx,
+      art_px: 0,
     };
   }
 }
