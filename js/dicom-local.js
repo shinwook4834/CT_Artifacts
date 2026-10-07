@@ -465,196 +465,90 @@ export class LocalDicomLoader {
    * - Outflow cannula exiting medially towards the subclavian vein catheter.
    * - Low-profile nose tapering laterally into subcutaneous fat tissue.
    */
-  static generateCelsiteCADContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true, size = 'standard', dz = 0.0) {
+  /**
+   * Generates exact anatomical contours of the Breast Tissue Expander Injection Port Assembly
+   * on the Axial CT plane:
+   * 1. U-shaped Frame / Bracket (needle stop & suture tabs, tilted along chest wall)
+   * 2. Central High-Density Magnetic/Metallic Core ("아래 밝은 물질")
+   */
+  static generateTissueExpanderContours(cx, cy, pixelSpacing = 1.0, isLeftHemisphere = true, dz = 0.0, actualCore = null) {
     const absDz = Math.abs(dz);
-    if (absDz > 6.8) {
+    if (absDz > 16.0) {
       return {
-        housingPoly: [],
-        cannulaPoly: [],
-        chamberPoly: [],
-        septumPoly: [],
+        uBracketPoly: [],
+        corePoly: [],
         composite: []
       };
     }
 
-    // 3D Z-axis spherical dome scaling factor:
-    // At center (dz = 0): scale = 1.0 (full 12.5 mm titanium cup)
-    // As dz moves away from center (+/- 6 mm): scale smoothly shrinks with dome geometry
-    const sChamber = Math.sqrt(Math.max(0.20, 1.0 - Math.pow(absDz / 7.0, 2)));
-    const sHousing = Math.sqrt(Math.max(0.35, 1.0 - Math.pow(absDz / 7.5, 2)));
-    const includeCannula = absDz <= 2.8;
-
     const pxScale = 1.0 / (pixelSpacing || 1.0);
-    const theta = (18.0 * Math.PI) / 180.0;
+    // Chest wall inclination: +11 deg on left breast (cx > 256), -11 deg on right breast (cx <= 256)
+    const angleDeg = isLeftHemisphere ? 11.0 : -11.0;
+    const theta = (angleDeg * Math.PI) / 180.0;
 
-    let tx, ty, nx, ny;
-    if (isLeftHemisphere) {
-      // Patient left chest (x > 256):
-      // +u points laterally into subcutaneous pocket
-      // -u points medially towards vein catheter
-      tx = Math.cos(theta);
-      ty = Math.sin(theta);
-      // +v points towards anterior chest skin (needle puncture direction, ny < 0)
-      nx = Math.sin(theta);
-      ny = -Math.cos(theta);
-    } else {
-      // Patient right chest (x <= 256):
-      tx = -Math.cos(theta);
-      ty = Math.sin(theta);
-      nx = -Math.sin(theta);
-      ny = -Math.cos(theta);
-    }
+    const tx = Math.cos(theta);
+    const ty = Math.sin(theta);
+    // Anterior unit vector (pointing up towards skin)
+    const nx = isLeftHemisphere ? Math.sin(theta) : -Math.sin(theta);
+    const ny = -Math.cos(theta);
 
     const transformPt = (uMm, vMm) => {
-      const uPx = uMm * pxScale;
-      const vPx = vMm * pxScale;
       return [
-        Math.round((cx + uPx * tx + vPx * nx) * 10) / 10,
-        Math.round((cy + uPx * ty + vPx * ny) * 10) / 10,
+        Math.round((cx + uMm * pxScale * tx + vMm * pxScale * nx) * 10) / 10,
+        Math.round((cy + uMm * pxScale * ty + vMm * pxScale * ny) * 10) / 10,
       ];
     };
 
-    // 1. Titanium Chamber Cup (All-HU Titanium Reservoir: 26-point U-cup polygon in true physical mm)
-    // Coincides strictly with visible high-HU U-shape metal cup on CT (WL 11000 / WW 30000)
-    const uCupMm = [
-      // Outer U-rim & floor (points 0..15: hugs visible titanium boundary 1:1 on CT)
-      [-5.68,  1.60],
-      [-6.36,  0.27],
-      [-6.22, -0.91],
-      [-5.86, -2.02],
-      [-5.27, -2.70],
-      [-4.06, -3.04],
-      [-2.54, -3.16],
-      [-0.50, -2.99],
-      [ 1.94, -2.93],
-      [ 4.27, -2.55],
-      [ 5.90, -1.89],
-      [ 6.60, -1.05],
-      [ 6.48,  0.14],
-      [ 6.11,  1.25],
-      [ 5.19,  2.17],
-      [ 3.31,  3.04],
-      // Inner U-rim & reservoir cavity floor (points 16..25)
-      [ 2.22,  2.57],
-      [ 3.86,  1.40],
-      [ 4.21,  0.23],
-      [ 4.21, -0.82],
-      [ 2.69, -1.40],
-      [ 0.58, -1.52],
-      [-1.52, -1.52],
-      [-3.27, -1.29],
-      [-4.33, -0.35],
-      [-4.44,  0.94]
+    // 1. U-shaped Frame / Bracket (Left arm, bottom shelf, right arm)
+    // Physical dimensions: width = 34.0 mm, arm height = 26.0 mm, arm thickness = 2.8 mm, base thickness = 3.8 mm
+    const wMm = 17.0;       // half-width
+    const hMm = 26.0;       // arm height
+    const twMm = 2.8;       // arm thickness
+    const tbMm = 3.8;       // base thickness
+
+    const uBracketPoly = [
+      transformPt(-wMm, hMm),
+      transformPt(-wMm, -tbMm),
+      transformPt(wMm, -tbMm),
+      transformPt(wMm, hMm),
+      transformPt(wMm - twMm, hMm),
+      transformPt(wMm - twMm, 0.5),
+      transformPt(-wMm + twMm, 0.5),
+      transformPt(-wMm + twMm, hMm)
     ];
 
-    // Scale chamber around its geometric centroid
-    let sumCu = 0, sumCv = 0;
-    for (let i = 0; i < 16; i++) {
-      sumCu += uCupMm[i][0];
-      sumCv += uCupMm[i][1];
+    // 2. Central High-Density Magnetic/Metallic Core ("아래 밝은 물질")
+    // Located at the bottom center of the U-channel.
+    // Cylinder diameter = 13.0 mm (radius = 6.5 mm), vertical height = 10.0 mm
+    let corePoly = [];
+    if (absDz <= 13.0) {
+      if (actualCore && actualCore.length >= 8) {
+        corePoly = actualCore;
+      } else {
+        const rCoreU = 6.4;
+        const rCoreV = 5.2;
+        const nCore = 24;
+        for (let i = 0; i < nCore; i++) {
+          const rad = (2 * Math.PI * i) / nCore;
+          const u = rCoreU * Math.cos(rad);
+          const v = -1.5 + rCoreV * Math.sin(rad);
+          corePoly.push(transformPt(u, v));
+        }
+      }
     }
-    const cU = sumCu / 16;
-    const cV = sumCv / 16;
 
-    const scaledChamberMm = uCupMm.map(p => [
-      cU + (p[0] - cU) * sChamber,
-      cV + (p[1] - cV) * sChamber
-    ]);
-    const chamberPoly = scaledChamberMm.map(p => transformPt(p[0], p[1]));
-
-    // 2. Silicone Septum Puncture Dome (in true physical mm, facing anterior skin)
-    // Flushes across top aperture of U-cup and arches anteriorly towards skin for needle puncture
-    const septumPoly = [];
-    const nSeptum = 16;
-    const uStart = cU + (-4.44 - cU) * sChamber;
-    const uEnd   = cU + ( 3.31 - cU) * sChamber;
-    const vStart = cV + ( 0.94 - cV) * sChamber;
-    const vEnd   = cV + ( 3.04 - cV) * sChamber;
-
-    for (let i = 0; i <= nSeptum; i++) {
-      const t = i / nSeptum;
-      const u = uStart + (uEnd - uStart) * t;
-      const vBase = vStart + (vEnd - vStart) * t;
-      const v = vBase + (3.0 * sChamber) * Math.sin(Math.PI * t);
-      septumPoly.push(transformPt(u, v));
-    }
-    septumPoly.push(transformPt(uStart, vStart));
-
-    // 3. Outer Housing Body (in true physical mm: standard petite 25 mm profile, seated on pectoral fascia)
-    const housingPtsMm = [
-      // Base along deep pectoral muscle fascia (-v)
-      [-9.0, -3.6],
-      [-6.0, -3.7],
-      [-3.0, -3.8],
-      [ 0.0, -3.8],
-      [ 3.0, -3.8],
-      [ 6.0, -3.7],
-      [ 9.0, -3.6],
-      [12.0, -3.4],
-      // Rounded lateral teardrop nose tip (+u, in subcutaneous fat)
-      [13.8, -2.8],
-      [14.6, -1.7],
-      [14.2, -0.5],
-      [13.0,  0.5],
-      // Lateral anterior shoulder
-      [10.5,  1.6],
-      [ 7.5,  2.6],
-      [ 4.5,  3.2],
-      // Septum aperture seat (dips around silicone septum)
-      [ 2.2,  2.5],
-      [ 0.0,  1.4],
-      [-2.2,  1.1],
-      [-4.5,  1.2],
-      // Medial anterior shoulder
-      [-7.0,  0.6],
-      [-9.0, -0.4],
-      [-10.2, -1.5],
-      [-10.5, -2.5],
-      [-9.8, -3.2]
-    ];
-    let sumHu = 0, sumHv = 0;
-    for (let i = 0; i < housingPtsMm.length; i++) {
-      sumHu += housingPtsMm[i][0];
-      sumHv += housingPtsMm[i][1];
-    }
-    const hU = sumHu / housingPtsMm.length;
-    const hV = sumHv / housingPtsMm.length;
-
-    const scaledHousingMm = housingPtsMm.map(p => [
-      hU + (p[0] - hU) * sHousing,
-      hV + (p[1] - hV) * sHousing
-    ]);
-    const housingPoly = scaledHousingMm.map(p => transformPt(p[0], p[1]));
-
-    // 4. Outflow Cannula Stem (only included on equatorial slices near catheter exit: |dz| <= 2.8 mm)
-    const cannulaPoly = includeCannula ? [
-      transformPt(-5.8, -1.6),
-      transformPt(-17.5, -1.6),
-      transformPt(-17.5,  0.6),
-      transformPt(-5.8,  0.6),
-    ] : [];
-
-    const composite = [housingPoly];
-    if (cannulaPoly.length > 0) {
-      composite.push(cannulaPoly);
-    } else {
-      composite.push([]); // Keep index 1 as placeholder for cannula
-    }
-    composite.push(chamberPoly); // Index 2: chamber
-    composite.push(septumPoly);  // Index 3: septum
+    const composite = [uBracketPoly, corePoly];
 
     return {
-      housingPoly,
-      cannulaPoly,
-      chamberPoly,
-      septumPoly,
-      composite,
+      uBracketPoly,
+      corePoly,
+      composite
     };
   }
 
   static tracePortContour(cluster, cx, cy, pixelSpacing = 1.0, isLeft = true) {
-    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, 'standard', 0.0);
-    return cad.composite;
+    const exp = LocalDicomLoader.generateTissueExpanderContours(cx, cy, pixelSpacing, isLeft, 0.0);
+    return exp.composite;
   }
 
   static detectStreaks(huArray, cx, cy, portRadius = 15) {
@@ -726,33 +620,36 @@ export class LocalDicomLoader {
     }
     const absDz = Math.abs(dz);
 
-    // Physical Celsite port total thickness is ~11-12 mm.
-    // Beyond +/- 6.8 mm from equatorial center, no port cross-section exists on CT.
-    if (absDz > 6.8) {
+    // Physical Tissue Expander port total thickness along Z is ~30 mm (+/- 15 mm from center).
+    // Beyond +/- 16.0 mm, no injection port cross-section exists on CT.
+    if (absDz > 16.0) {
       return { port: [], art: [], port_px: 0, art_px: 0 };
     }
 
-    // Detect ChemoPort component or fallback
+    // Detect high-density metal / magnetic core component on this slice
     const comp = LocalDicomLoader.findChemoPortComponent(huArray, anchor);
     let portCenter = null;
     let portPx = 0;
 
-    if (anchor) {
-      // If a local slice metal component is found close to the anchor, blend smoothly
-      // to follow slight chest wall inclination while preventing sudden jumps on noise/streaks
-      if (comp && comp.count >= 4 && Math.hypot(comp.cx - anchor.x, comp.cy - anchor.y) <= 8) {
-        portCenter = {
-          x: Math.round((anchor.x * 0.3 + comp.cx * 0.7) * 10) / 10,
-          y: Math.round((anchor.y * 0.3 + comp.cy * 0.7) * 10) / 10,
-        };
-        portPx = comp.count;
+    if (comp && comp.count >= 4) {
+      // Local metal component detected on this slice
+      if (anchor) {
+        const d = Math.hypot(comp.cx - anchor.x, comp.cy - anchor.y);
+        if (d <= 50) {
+          // Follow actual metal centroid directly on this slice
+          portCenter = { x: comp.cx, y: comp.cy };
+          portPx = comp.count;
+        } else {
+          portCenter = { x: anchor.x, y: anchor.y };
+          portPx = comp.count;
+        }
       } else {
-        portCenter = { x: anchor.x, y: anchor.y };
-        portPx = comp ? comp.count : 80;
+        portCenter = { x: comp.cx, y: comp.cy };
+        portPx = comp.count;
       }
-    } else if (comp && comp.count >= 4 && comp.maxHu >= 1800) {
-      portCenter = { x: comp.cx, y: comp.cy };
-      portPx = comp.count;
+    } else if (anchor) {
+      portCenter = { x: anchor.x, y: anchor.y };
+      portPx = 80;
     }
 
     if (!portCenter) {
@@ -761,8 +658,12 @@ export class LocalDicomLoader {
 
     const { x: cx, y: cy } = portCenter;
     const isLeft = cx > 256;
-    const cad = LocalDicomLoader.generateCelsiteCADContours(cx, cy, pixelSpacing, isLeft, 'standard', dz);
-    const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy, 14);
+    
+    // Pass actual metal contour traced on this slice if available
+    const actualCore = (comp && comp.portContour && comp.portContour.length >= 8) ? comp.portContour : null;
+
+    const expContours = LocalDicomLoader.generateTissueExpanderContours(cx, cy, pixelSpacing, isLeft, dz, actualCore);
+    const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy, 20);
 
     let artPx = 0;
     for (const s of streaks) {
@@ -770,7 +671,7 @@ export class LocalDicomLoader {
     }
 
     return {
-      port: cad.composite,
+      port: expContours.composite,
       art: streaks,
       port_px: portPx,
       art_px: artPx,

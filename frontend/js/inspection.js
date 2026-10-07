@@ -79,66 +79,56 @@ export class ContourOverlay {
       ctx.restore();
     }
 
-    // 2. Draw ChemoPort Implant Contours (Outer Housing + Outflow Cannula + Titanium Chamber + Silicone Septum)
+    // 2. Draw Tissue Expander / ChemoPort Implant Contours
     if (this.showPort && this.contours.port && this.contours.port.length > 0) {
+      const isExpander = this.contours.port.length <= 2;
       for (let pIdx = 0; pIdx < this.contours.port.length; pIdx++) {
         const poly = this.contours.port[pIdx];
         if (!poly || poly.length < 3) continue;
 
         ctx.save();
-        if (pIdx === 3) {
-          // Silicone Septum Puncture Dome (FACING DIRECTLY TOWARDS SKIN - Huber Needle Target)
-          ctx.strokeStyle = "#38bdf8";
-          ctx.fillStyle = "rgba(56, 189, 248, 0.45)";
-          ctx.lineWidth = 2.4 / this.zoom;
-          ctx.shadowColor = "#38bdf8";
-          ctx.shadowBlur = 10 / this.zoom;
-        } else if (pIdx === 2) {
-          // Titanium Chamber Cup (All-HU Titanium Reservoir: Solid U-Cup Wall Fill + Crisp Outer U-Rim)
-          ctx.fillStyle = "rgba(248, 250, 252, 0.22)";
-
-          // 1. Subtle translucent fill inside the titanium cup wall
-          ctx.beginPath();
-          ctx.moveTo(poly[0][0], poly[0][1]);
-          for (let i = 1; i < poly.length; i++) {
-            ctx.lineTo(poly[i][0], poly[i][1]);
-          }
-          ctx.closePath();
-          ctx.fill();
-          // Do NOT stroke entire 26-point polygon: stroking inner points 16..25 produces a hollow double-line wire loop.
-
-          // 2. Bold Outer U-Border Rim (coincides strictly with visible U-shape in All-HU CT)
-          const outerCount = Math.min(16, poly.length);
-          if (outerCount >= 8) {
-            ctx.beginPath();
-            ctx.strokeStyle = "#ffffff";
-            ctx.lineWidth = 3.0 / this.zoom;
-            ctx.shadowColor = "#ffffff";
-            ctx.shadowBlur = 6 / this.zoom;
+        if (isExpander) {
+          if (pIdx === 0) {
+            // Tissue Expander: U-shaped Frame / Needle Stop Bracket
+            ctx.strokeStyle = "#38bdf8"; // Glowing Cyan/Sky Blue
+            ctx.fillStyle = "rgba(56, 189, 248, 0.22)";
+            ctx.lineWidth = 2.4 / this.zoom;
+            ctx.shadowColor = "#38bdf8";
+            ctx.shadowBlur = 8 / this.zoom;
             ctx.lineCap = "round";
             ctx.lineJoin = "round";
-            ctx.moveTo(poly[0][0], poly[0][1]);
-            for (let i = 1; i < outerCount; i++) {
-              ctx.lineTo(poly[i][0], poly[i][1]);
-            }
-            ctx.stroke();
+          } else {
+            // Tissue Expander: Central High-Density Metal/Magnet Core ("아래 밝은 물질")
+            ctx.strokeStyle = "#ffffff"; // Crisp White
+            ctx.fillStyle = "rgba(255, 255, 255, 0.38)";
+            ctx.lineWidth = 3.0 / this.zoom;
+            ctx.shadowColor = "#ffffff";
+            ctx.shadowBlur = 10 / this.zoom;
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
           }
-          ctx.restore();
-          continue;
-        } else if (pIdx === 1) {
-          // Outflow Cannula Stem (towards medial subclavian catheter)
-          ctx.strokeStyle = "#0d9488";
-          ctx.fillStyle = "rgba(13, 148, 136, 0.35)";
-          ctx.lineWidth = 1.8 / this.zoom;
-          ctx.shadowColor = "#2dd4bf";
-          ctx.shadowBlur = 6 / this.zoom;
         } else {
-          // Outer Housing Body (Celsite Low-Profile Teardrop Profile)
-          ctx.strokeStyle = "#0d9488";
-          ctx.fillStyle = "rgba(13, 148, 136, 0.15)";
-          ctx.lineWidth = 2.0 / this.zoom;
-          ctx.shadowColor = "#2dd4bf";
-          ctx.shadowBlur = 6 / this.zoom;
+          if (pIdx === 3) {
+            ctx.strokeStyle = "#38bdf8";
+            ctx.fillStyle = "rgba(56, 189, 248, 0.45)";
+            ctx.lineWidth = 2.4 / this.zoom;
+            ctx.shadowColor = "#38bdf8";
+            ctx.shadowBlur = 10 / this.zoom;
+          } else if (pIdx === 2) {
+            ctx.strokeStyle = "#ffffff";
+            ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+            ctx.lineWidth = 3.0 / this.zoom;
+            ctx.shadowColor = "#ffffff";
+            ctx.shadowBlur = 8 / this.zoom;
+          } else if (pIdx === 1) {
+            ctx.strokeStyle = "#0d9488";
+            ctx.fillStyle = "rgba(13, 148, 136, 0.35)";
+            ctx.lineWidth = 1.8 / this.zoom;
+          } else {
+            ctx.strokeStyle = "#0d9488";
+            ctx.fillStyle = "rgba(13, 148, 136, 0.15)";
+            ctx.lineWidth = 2.0 / this.zoom;
+          }
         }
 
         ctx.beginPath();
