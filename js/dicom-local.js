@@ -507,39 +507,76 @@ export class LocalDicomLoader {
     const Rz = 19.0;
     const sRound = Math.sqrt(Math.max(0.0, 1.0 - Math.pow(absDz / Rz, 2)));
 
-    // 1. Dynamic U-shaped Frame / Bracket:
-    // Height: grows from 10.0 mm at edges to 30.0 mm at center
-    // Width: grows from 26.0 mm (half-width 13.0 mm) to 35.0 mm (half-width 17.5 mm)
-    const hMm = 10.0 + (30.0 - 10.0) * sRound;
-    const wMm = 13.0 + (17.5 - 13.0) * sRound;
-    const twMm = 2.4 + 0.4 * sRound;
-    const tbMm = 3.2 + 0.6 * sRound;
+    // 1. Anatomical Curved U-shaped Frame / Bracket (Left arm, curved bottom cradle, right arm):
+    // Left arm reaches higher towards anterior skin, right arm follows chest wall slope
+    const hLeft = 6.0 + 16.0 * sRound;
+    const hRight = 3.0 + 10.0 * sRound;
+    const wSpan = 10.5 + 3.0 * sRound;
+    const tw = 2.6; // Wall thickness (mm)
 
-    const uBracketPoly = [
-      transformPt(-wMm, hMm),
-      transformPt(-wMm, -tbMm),
-      transformPt(wMm, -tbMm),
-      transformPt(wMm, hMm),
-      transformPt(wMm - twMm, hMm),
-      transformPt(wMm - twMm, 0.5),
-      transformPt(-wMm + twMm, 0.5),
-      transformPt(-wMm + twMm, hMm)
-    ];
+    const outerPts = [];
+    const innerPts = [];
+
+    // Outer profile:
+    outerPts.push(transformPt(-wSpan, hLeft));
+    for (let i = 0; i <= 5; i++) {
+      const t = 1.0 - (i / 5);
+      const u = -wSpan + Math.pow(1.0 - t, 2) * 1.5;
+      const v = hLeft * t - (1.0 - t) * 1.5;
+      outerPts.push(transformPt(u, v));
+    }
+    // Bottom curved cradle:
+    for (let i = 0; i <= 6; i++) {
+      const t = -0.6 + 1.2 * (i / 6);
+      const u = t * wSpan * 0.8;
+      const v = -2.0 * (1.0 - Math.pow(t / 0.6, 2));
+      outerPts.push(transformPt(u, v));
+    }
+    // Right arm:
+    for (let i = 0; i <= 5; i++) {
+      const t = i / 5;
+      const u = wSpan * 0.8 + t * (wSpan * 0.2);
+      const v = -1.5 * (1.0 - t) + hRight * t;
+      outerPts.push(transformPt(u, v));
+    }
+    outerPts.push(transformPt(wSpan, hRight));
+
+    // Inner profile:
+    innerPts.push(transformPt(wSpan - tw, hRight));
+    for (let i = 0; i <= 5; i++) {
+      const t = 1.0 - (i / 5);
+      const u = (wSpan - tw) * 0.8 + t * ((wSpan - tw) * 0.2);
+      const v = -1.5 * (1.0 - t) + (hRight - tw) * t + tw;
+      innerPts.push(transformPt(u, v));
+    }
+    for (let i = 0; i <= 6; i++) {
+      const t = 0.6 - 1.2 * (i / 6);
+      const u = t * (wSpan - tw) * 0.8;
+      const v = -2.0 * (1.0 - Math.pow(t / 0.6, 2)) + tw;
+      innerPts.push(transformPt(u, v));
+    }
+    for (let i = 0; i <= 5; i++) {
+      const t = i / 5;
+      const u = -(wSpan - tw) + Math.pow(1.0 - t, 2) * 1.5;
+      const v = (hLeft - tw) * t - (1.0 - t) * 1.5 + tw;
+      innerPts.push(transformPt(u, v));
+    }
+    innerPts.push(transformPt(-wSpan + tw, hLeft));
+
+    const uBracketPoly = [...outerPts, ...innerPts];
 
     // 2. Central High-Density Magnetic/Metallic Core ("아래 밝은 물질")
-    // Located at the bottom center of the U-channel.
-    // Core radius smoothly scales with sRound
     let corePoly = [];
     if (actualCore && actualCore.length >= 8) {
       corePoly = actualCore;
     } else if (absDz <= 18.5) {
-      const rCoreU = 6.4 * (0.4 + 0.6 * sRound);
-      const rCoreV = 5.2 * (0.4 + 0.6 * sRound);
+      const rCoreU = 5.2 * (0.4 + 0.6 * sRound);
+      const rCoreV = 4.2 * (0.4 + 0.6 * sRound);
       const nCore = 24;
       for (let i = 0; i < nCore; i++) {
         const rad = (2 * Math.PI * i) / nCore;
         const u = rCoreU * Math.cos(rad);
-        const v = -1.5 + rCoreV * Math.sin(rad);
+        const v = 2.0 + rCoreV * Math.sin(rad);
         corePoly.push(transformPt(u, v));
       }
     }
@@ -669,7 +706,7 @@ export class LocalDicomLoader {
     // Pass actual metal contour traced on this slice if available
     const actualCore = (comp && comp.portContour && comp.portContour.length >= 8) ? comp.portContour : null;
 
-    const expContours = LocalDicomLoader.generateTissueExpanderContours(cx, cy, pixelSpacing, isLeft, dz, actualCore);
+    const expContours = LocalDicomLoader.generateTissueExpanderContours(cx, cy + 2.0, pixelSpacing, isLeft, dz, actualCore);
     const streaks = LocalDicomLoader.detectStreaks(huArray, cx, cy, 20);
 
     let artPx = 0;
