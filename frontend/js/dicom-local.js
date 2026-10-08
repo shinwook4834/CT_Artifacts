@@ -657,49 +657,36 @@ export class LocalDicomLoader {
     let totalCount = 0;
 
     if (peak >= 12000) {
-      // Slices with the neodymium magnet: capture BOTH the magnet core and the U-bracket
-      // 1. Bottom Magnet Core (>= 5000 HU)
-      const ptsBottom = [];
-      for (let y = Math.floor(anchor.y - 12); y <= Math.ceil(anchor.y + 12); y++) {
-        for (let x = Math.floor(anchor.x - 18); x <= Math.ceil(anchor.x + 18); x++) {
-          if (huArray[y * w + x] >= 5000) ptsBottom.push({ x, y });
-        }
-      }
-      const cBottom = LocalDicomLoader.traceContourOfCluster(ptsBottom);
-      if (cBottom) {
-        contours.push(cBottom);
-        totalCount += ptsBottom.length;
-      }
+      // Slices with the neodymium magnet:
+      // Unified All-HU extraction uniting the titanium cradle, upright arms, and magnet dome
+      // into a single, clean, continuous contour (no fragmented pieces or stray loops).
+      const mask = new Uint8Array(w * w);
+      const yMin = Math.floor(anchor.y - 25);
+      const yMax = Math.min(Math.floor(anchor.y + 4), 194); // Clamped to eliminate downward streak
+      const xMin = Math.floor(anchor.x - 22);
+      const xMax = Math.ceil(anchor.x + 22);
 
-      // 2. U-Shape Bracket (surrounding and cradling the magnet, >= 500 HU)
-      const maskU = new Uint8Array(w * w);
-      const yMinU = Math.floor(anchor.y - 20);
-      const yMaxU = Math.ceil(anchor.y + 8);
-      const xMinU = Math.floor(anchor.x - 20);
-      const xMaxU = Math.ceil(anchor.x + 20);
-
-      for (let y = yMinU; y <= yMaxU; y++) {
-        for (let x = xMinU; x <= xMaxU; x++) {
+      for (let y = yMin; y <= yMax; y++) {
+        for (let x = xMin; x <= xMax; x++) {
           // Exclude vertical streak halo directly above magnet
           if (y >= 170 && y <= 184 && x >= 321 && x <= 334) continue;
-          // Exclude magnet core
-          if (y >= 187 && y <= 193 && x >= 324 && x <= 332) continue;
-          if (huArray[y * w + x] >= 500) {
-            maskU[y * w + x] = 1;
+          if (huArray[y * w + x] >= 1100) {
+            mask[y * w + x] = 1;
           }
         }
       }
 
       // Morphological horizontal closing (dilate dx=[-2..2], dy=[-1..1] then erode)
-      // to bridge thin wire cradle across the base between arms
+      // to bridge thin wire cradle sections across the base between arms
       const dilated = new Uint8Array(w * w);
-      for (let y = yMinU; y <= yMaxU; y++) {
-        for (let x = xMinU; x <= xMaxU; x++) {
+      for (let y = yMin - 1; y <= yMax + 1; y++) {
+        for (let x = xMin - 2; x <= xMax + 2; x++) {
+          if (y < 0 || y >= w || x < 0 || x >= w) continue;
           let hit = 0;
           for (let dy = -1; dy <= 1 && !hit; dy++) {
             for (let dx = -2; dx <= 2; dx++) {
               const ny = y + dy, nx = x + dx;
-              if (ny >= 0 && ny < w && nx >= 0 && nx < w && maskU[ny * w + nx] === 1) {
+              if (ny >= 0 && ny < w && nx >= 0 && nx < w && mask[ny * w + nx] === 1) {
                 hit = 1; break;
               }
             }
@@ -709,8 +696,8 @@ export class LocalDicomLoader {
       }
 
       const ptsClosed = [];
-      for (let y = yMinU; y <= yMaxU; y++) {
-        for (let x = xMinU; x <= xMaxU; x++) {
+      for (let y = yMin; y <= yMax; y++) {
+        for (let x = xMin; x <= xMax; x++) {
           let allHit = 1;
           for (let dy = -1; dy <= 1 && allHit; dy++) {
             for (let dx = -2; dx <= 2; dx++) {
@@ -726,43 +713,44 @@ export class LocalDicomLoader {
         }
       }
 
-      // Cluster closed points into connected components (8-connectivity)
-      const coordMap = new Map();
-      for (let i = 0; i < ptsClosed.length; i++) coordMap.set(ptsClosed[i].y * w + ptsClosed[i].x, i);
-      const visited = new Uint8Array(ptsClosed.length);
-      const clustersU = [];
-      for (let i = 0; i < ptsClosed.length; i++) {
-        if (visited[i]) continue;
-        const cl = [];
-        const queue = [i];
-        visited[i] = 1;
-        let head = 0;
-        while (head < queue.length) {
-          const curr = queue[head++];
-          const pt = ptsClosed[curr];
-          cl.push(pt);
-          for (let dy = -1; dy <= 1; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-              if (dx === 0 && dy === 0) continue;
-              const nx = pt.x + dx, ny = pt.y + dy;
-              const k = ny * w + nx;
-              if (coordMap.has(k)) {
-                const nIdx = coordMap.get(k);
-                if (!visited[nIdx]) { visited[nIdx] = 1; queue.push(nIdx); }
+      // Find largest connected component (8-connectivity)
+      if (ptsClosed.length >= 15) {
+        const coordMap = new Map();
+        for (let i = 0; i < ptsClosed.length; i++) coordMap.set(ptsClosed[i].y * w + ptsClosed[i].x, i);
+        const visited = new Uint8Array(ptsClosed.length);
+        const clusters = [];
+
+        for (let i = 0; i < ptsClosed.length; i++) {
+          if (visited[i]) continue;
+          const cl = [];
+          const queue = [i];
+          visited[i] = 1;
+          let head = 0;
+          while (head < queue.length) {
+            const curr = queue[head++];
+            const pt = ptsClosed[curr];
+            cl.push(pt);
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                const nx = pt.x + dx, ny = pt.y + dy;
+                const k = ny * w + nx;
+                if (coordMap.has(k)) {
+                  const nIdx = coordMap.get(k);
+                  if (!visited[nIdx]) { visited[nIdx] = 1; queue.push(nIdx); }
+                }
               }
             }
           }
+          clusters.push(cl);
         }
-        clustersU.push(cl);
-      }
 
-      clustersU.sort((a, b) => b.length - a.length);
-      for (const cl of clustersU) {
-        if (cl.length >= 20) {
-          const cU = LocalDicomLoader.traceContourOfCluster(cl);
-          if (cU) {
-            contours.push(cU);
-            totalCount += cl.length;
+        clusters.sort((a, b) => b.length - a.length);
+        if (clusters.length > 0 && clusters[0].length >= 20) {
+          const cUnified = LocalDicomLoader.traceContourOfCluster(clusters[0]);
+          if (cUnified) {
+            contours.push(cUnified);
+            totalCount = clusters[0].length;
           }
         }
       }
@@ -771,7 +759,7 @@ export class LocalDicomLoader {
       const comp = LocalDicomLoader.findWhiteComponent(huArray, anchor);
       if (comp && comp.contour) {
         contours.push(comp.contour);
-        totalCount += comp.count;
+        totalCount = comp.count;
       }
     }
 
