@@ -673,6 +673,10 @@ export class LocalDicomLoader {
           if (huArray[y * w + x] >= 1100) {
             mask[y * w + x] = 1;
           }
+          // Connect cradle wire at y=185..187 across beam-hardening shadow (800 HU)
+          if (y >= 185 && y <= 187 && x >= 316 && x <= 324 && huArray[y * w + x] >= 800) {
+            mask[y * w + x] = 1;
+          }
         }
       }
 
